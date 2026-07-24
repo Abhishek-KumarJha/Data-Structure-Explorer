@@ -1,20 +1,22 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import { boolean, date, integer, pgTable, serial, text } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
 
-export {}
+export const problemsTable = pgTable("problems", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  difficulty: text("difficulty").notNull(),
+  platform: text("platform").notNull(),
+  topics: text("topics").array().notNull().default([]),
+  status: text("status").notNull().default("Unsolved"),
+  favorite: boolean("favorite").notNull().default(false),
+  notes: text("notes").notNull().default(""),
+  dateAdded: date("date_added", { mode: "string" }).notNull(),
+  solutionLink: text("solution_link").notNull().default(""),
+  solvedDate: date("solved_date", { mode: "string" }),
+  attempts: integer("attempts").notNull().default(0),
+});
+
+export const insertProblemSchema = createInsertSchema(problemsTable).omit({ id: true });
+export type InsertProblem = z.infer<typeof insertProblemSchema>;
+export type Problem = typeof problemsTable.$inferSelect;

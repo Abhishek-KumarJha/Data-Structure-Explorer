@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: problems
+    description: Competitive programming problem library
+  - name: analytics
+    description: Practice analytics and revision planning
 paths:
   /healthz:
     get:
@@ -24,6 +28,107 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /problems:
+    get:
+      operationId: listProblems
+      tags: [problems]
+      summary: List problems
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: difficulty
+          in: query
+          schema: { type: string, enum: [Easy, Medium, Hard, All] }
+        - name: platform
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [Solved, Unsolved, All] }
+        - name: favoritesOnly
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Problem list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Problem" }
+    post:
+      operationId: createProblem
+      tags: [problems]
+      summary: Create a problem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProblemInput" }
+      responses:
+        "201":
+          description: Created problem
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /problems/{id}:
+    patch:
+      operationId: updateProblem
+      tags: [problems]
+      summary: Update a problem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProblemUpdate" }
+      responses:
+        "200":
+          description: Updated problem
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    delete:
+      operationId: deleteProblem
+      tags: [problems]
+      summary: Delete a problem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Problem deleted
+  /analytics/summary:
+    get:
+      operationId: getAnalyticsSummary
+      tags: [analytics]
+      summary: Get practice analytics summary
+      responses:
+        "200":
+          description: Practice analytics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyticsSummary" }
+  /analytics/revision-queue:
+    get:
+      operationId: getRevisionQueue
+      tags: [analytics]
+      summary: Get priority revision queue
+      responses:
+        "200":
+          description: Revision queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Problem" }
 components:
   schemas:
     HealthStatus:
@@ -33,4 +138,80 @@ components:
           type: string
       required:
         - status
+    Problem:
+      type: object
+      required: [id, title, difficulty, platform, topics, status, favorite, dateAdded]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        difficulty: { type: string, enum: [Easy, Medium, Hard] }
+        platform: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [Solved, Unsolved] }
+        favorite: { type: boolean }
+        notes: { type: string }
+        dateAdded: { type: string }
+        solutionLink: { type: string }
+        solvedDate: { type: ["string", "null"] }
+        attempts: { type: integer }
+    ProblemInput:
+      type: object
+      required: [title, difficulty, platform, topics]
+      properties:
+        title: { type: string, minLength: 1 }
+        difficulty: { type: string, enum: [Easy, Medium, Hard] }
+        platform: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        notes: { type: string }
+        solutionLink: { type: string }
+    ProblemUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        difficulty: { type: string, enum: [Easy, Medium, Hard] }
+        platform: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [Solved, Unsolved] }
+        favorite: { type: boolean }
+        notes: { type: string }
+        solutionLink: { type: string }
+    AnalyticsSummary:
+      type: object
+      required: [total, solved, favorites, weeklyGoal, weeklyCompleted, difficulty, topics, weeklyActivity]
+      properties:
+        total: { type: integer }
+        solved: { type: integer }
+        favorites: { type: integer }
+        weeklyGoal: { type: integer }
+        weeklyCompleted: { type: integer }
+        difficulty:
+          type: array
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { type: integer }
+        topics:
+          type: array
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { type: integer }
+        weeklyActivity:
+          type: array
+          items:
+            type: object
+            required: [day, solved]
+            properties:
+              day: { type: string }
+              solved: { type: integer }
 

@@ -1,6 +1,6 @@
-# [Project name]
+# CP Companion
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+CP Companion is a local-first competitive programming practice and analysis system for organizing problems, running focused practice sessions, and understanding progress.
 
 ## Run & Operate
 
@@ -22,23 +22,35 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/cp-companion/src/App.tsx` — responsive application shell, local profile gate, routes, library actions, contest mode, analytics, and settings.
+- `artifacts/cp-companion/src/index.css` — parchment/midnight visual theme and motion utilities.
+- `artifacts/api-server/src/routes/problems.ts` — problem library, seeded data, analytics summary, and revision queue endpoints.
+- `lib/api-spec/openapi.yaml` — source of truth for the API contract.
+- `lib/db/src/schema/index.ts` — Drizzle schema for the problem library.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- API contracts are defined in OpenAPI and regenerated into typed React Query clients and Zod validators.
+- The managed PostgreSQL database is used behind a repository-friendly Drizzle schema so storage can be changed later without changing the UI contract.
+- The first-run experience is local-first: a browser-only profile gate and localStorage fallback keep the practice surface usable when the API is unavailable.
+- The interface delegates visual structure to the frontend design layer while keeping CRUD, analytics, and revision behavior real.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Local sign-in/profile gate with browser-scoped data.
+- Dashboard with weekly momentum, solved/favorite totals, focus topics, and recent problems.
+- Searchable/filterable problem library with add, edit, delete, favorite, and solved actions.
+- Timed virtual contest surface, priority revision queue, analytics charts, and difficulty/topic summaries.
+- JSON and CSV import/export, theme switching, and local workspace reset.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the product portfolio-ready, professional, responsive, and centered on practical data structures and algorithms.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The Vite build expects `PORT` and `BASE_PATH` from the managed workflow; standalone verification should provide both explicitly.
+- Regenerate API client/Zod output after changing `lib/api-spec/openapi.yaml`.
 
 ## Pointers
 

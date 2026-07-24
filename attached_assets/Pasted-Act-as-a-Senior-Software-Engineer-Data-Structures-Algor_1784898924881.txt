@@ -1,0 +1,438 @@
+Act as a Senior Software Engineer, Data Structures & Algorithms Expert, and UI/UX Designer.
+
+Build a complete project from scratch called:
+
+# CP Companion – Competitive Programming Practice & Analysis System
+
+## Objective
+
+Develop a modern web application that helps competitive programmers organize, search, practice, and analyze coding problems.
+
+The project is for a university Data Structures & Competitive Programming course, so the main focus should be demonstrating practical implementations of DSA concepts instead of just creating CRUD pages.
+
+The application should look professional enough to include in a software engineering portfolio.
+
+---------------------------------------
+
+## Tech Stack
+
+Frontend
+- React
+- TypeScript
+- Tailwind CSS
+- Vite
+
+Backend
+- Node.js
+- Express.js
+- TypeScript
+
+Database
+- SQLite (default)
+- Design the code so it can easily switch to PostgreSQL later.
+
+---------------------------------------
+
+## Folder Structure
+
+Create the project with the following architecture:
+
+client/
+    src/
+        assets/
+        components/
+        pages/
+        layouts/
+        hooks/
+        context/
+        services/
+        utils/
+        types/
+        styles/
+
+server/
+    src/
+        controllers/
+        routes/
+        services/
+        models/
+        middleware/
+        database/
+        algorithms/
+        datastructures/
+        utils/
+
+shared/
+    types/
+
+docs/
+
+README.md
+
+---------------------------------------
+
+## Core Features
+
+### Dashboard
+
+Display
+
+- Total Problems
+- Solved Problems
+- Unsolved Problems
+- Favorite Problems
+- Weekly Progress
+- Difficulty Distribution
+- Topic Distribution
+
+---------------------------------------
+
+### Problem Library
+
+Each problem should have
+
+ID
+
+Title
+
+Difficulty
+
+Platform
+
+Topics
+
+Status
+
+Favorite
+
+Notes
+
+Date Added
+
+Solution Link
+
+---------------------------------------
+
+### Problem Management
+
+Allow users to
+
+Add Problem
+
+Edit Problem
+
+Delete Problem
+
+Search Problem
+
+Filter Problems
+
+Sort Problems
+
+Favorite Problems
+
+Mark Solved
+
+---------------------------------------
+
+### Smart Search
+
+Implement searching by
+
+Title
+
+Topic
+
+Platform
+
+Difficulty
+
+Use efficient searching.
+
+---------------------------------------
+
+### Auto Complete
+
+Implement auto-complete suggestions using a Trie.
+
+Suggestions should appear while typing.
+
+---------------------------------------
+
+### Contest Mode
+
+Allow users to create virtual contests.
+
+Select
+
+Easy
+
+Medium
+
+Hard
+
+Generate random contest.
+
+Include
+
+Timer
+
+Score
+
+Result Summary
+
+---------------------------------------
+
+### Revision Scheduler
+
+Generate revision order based on
+
+Difficulty
+
+Priority
+
+Solved Date
+
+Use a Priority Queue (Heap).
+
+---------------------------------------
+
+### Analytics
+
+Display
+
+Topic Statistics
+
+Difficulty Statistics
+
+Platform Statistics
+
+Weekly Progress
+
+Monthly Progress
+
+Heatmap
+
+Completion Percentage
+
+---------------------------------------
+
+### Import / Export
+
+Support
+
+CSV
+
+JSON
+
+Import existing problem lists.
+
+Export all data.
+
+---------------------------------------
+
+### Settings
+
+Theme
+
+Dark Mode
+
+Light Mode
+
+Reset Data
+
+Export Backup
+
+---------------------------------------
+
+## Data Structures
+
+Implement these yourself instead of using library implementations whenever possible.
+
+Trie
+
+Priority Queue
+
+Stack
+
+Queue
+
+Hash Map Wrapper
+
+Prefix Sum
+
+Binary Search Utilities
+
+Each implementation should be reusable.
+
+---------------------------------------
+
+## Algorithms
+
+Implement
+
+Binary Search
+
+Greedy Recommendation
+
+Contest Generator
+
+Random Practice Generator
+
+Statistics Calculator
+
+Search Algorithms
+
+Recommendation Engine
+
+Revision Scheduler
+
+---------------------------------------
+
+## DSA Explanation
+
+Every algorithm file should include
+
+Purpose
+
+Time Complexity
+
+Space Complexity
+
+Why this algorithm was chosen
+
+---------------------------------------
+
+## UI
+
+Modern dashboard
+
+Responsive
+
+Glassmorphism
+
+Rounded cards
+
+Animated sidebar
+
+Dark Mode
+
+Charts
+
+Search animations
+
+Professional color palette
+
+Icons using Lucide React
+
+Use Tailwind CSS.
+
+---------------------------------------
+
+## Charts
+
+Use Recharts.
+
+Show
+
+Pie Charts
+
+Bar Charts
+
+Line Charts
+
+Progress Rings
+
+---------------------------------------
+
+## Authentication
+
+Local login only.
+
+No OAuth required.
+
+Store users locally.
+
+---------------------------------------
+
+## Database
+
+SQLite
+
+Create proper schema.
+
+Seed with 100 competitive programming problems.
+
+---------------------------------------
+
+## API
+
+REST API
+
+Organize controllers and routes.
+
+---------------------------------------
+
+## Code Quality
+
+Use TypeScript everywhere.
+
+Follow SOLID principles.
+
+Use reusable components.
+
+Avoid duplicate code.
+
+Write clean comments.
+
+Handle errors properly.
+
+---------------------------------------
+
+## Documentation
+
+Generate
+
+README
+
+Architecture Diagram (Markdown)
+
+Folder Structure
+
+Feature Documentation
+
+API Documentation
+
+Installation Guide
+
+Future Scope
+
+---------------------------------------
+
+## Final Goal
+
+The finished project should feel like a mini LeetCode companion built for competitive programmers and should clearly demonstrate practical applications of
+
+Arrays
+
+Hashing
+
+Strings
+
+Trie
+
+Priority Queue
+
+Queue
+
+Stack
+
+Binary Search
+
+Prefix Sum
+
+Greedy
+
+Problem Solving
+
+The project should be fully functional, responsive, modular, production-ready, and suitable for a semester-end Data Structures & Competitive Programming evaluation.
