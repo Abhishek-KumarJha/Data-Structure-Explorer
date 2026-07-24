@@ -40,6 +40,7 @@ CP Companion is a local-first competitive programming practice and analysis syst
 - Local sign-in/profile gate with browser-scoped data.
 - Dashboard with weekly momentum, solved/favorite totals, focus topics, and recent problems.
 - Searchable/filterable problem library with add, edit, delete, favorite, and solved actions.
+- Collaborator room with friend invites, a shared pinned problem, persistent room chat, and solved-problem leaderboard.
 - Timed virtual contest surface, priority revision queue, analytics charts, and difficulty/topic summaries.
 - JSON and CSV import/export, theme switching, and local workspace reset.
 
@@ -51,6 +52,7 @@ CP Companion is a local-first competitive programming practice and analysis syst
 
 - The Vite build expects `PORT` and `BASE_PATH` from the managed workflow; standalone verification should provide both explicitly.
 - Regenerate API client/Zod output after changing `lib/api-spec/openapi.yaml`.
+- Collaboration data is currently browser-local, matching the app's local-first profile mode; shared multi-device rooms would require collaboration API/auth work.
 
 ## Pointers
 

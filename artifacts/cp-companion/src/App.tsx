@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
-import { BarChart3, BookOpen, BrainCircuit, Check, CheckCircle2, ChevronRight, Code2, Command, Database, ExternalLink, Filter, Flame, Heart, LayoutDashboard, LogIn, LogOut, Menu, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Settings as SettingsIcon, Sparkles, Sun, Target, Trash2, Trophy, Upload, X, Zap } from 'lucide-react';
+import { BarChart3, BookOpen, BrainCircuit, Check, CheckCircle2, ChevronRight, Code2, Command, Copy, Crown, Database, ExternalLink, Filter, Flame, Heart, LayoutDashboard, Link2, LogIn, LogOut, Menu, MessageCircle, Moon, MoreHorizontal, Pencil, Pin, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Sparkles, Sun, Target, Trash2, Trophy, Upload, UserPlus, Users, X, Zap } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Toaster } from '@/components/ui/toaster';
 import NotFound from '@/pages/not-found';
@@ -24,6 +24,42 @@ const useLocal = () => {
 };
 
 type LocalUser = { name: string; email: string };
+type Collaborator = { id: string; name: string; email: string; role: 'You' | 'Member'; status: 'Active' | 'Invited'; solved: number; streak: number };
+type ChatMessage = { id: string; author: string; text: string; time: string };
+type CollaborationState = { members: Collaborator[]; pinnedProblemId: number | null; messages: ChatMessage[] };
+
+const defaultCollaboration = (user: LocalUser): CollaborationState => ({
+  members: [
+    { id: 'owner', name: user.name, email: user.email, role: 'You', status: 'Active', solved: 0, streak: 6 },
+    { id: 'anika', name: 'Anika Sharma', email: 'anika@example.com', role: 'Member', status: 'Active', solved: 34, streak: 8 },
+    { id: 'rohan', name: 'Rohan Mehta', email: 'rohan@example.com', role: 'Member', status: 'Active', solved: 29, streak: 5 },
+  ],
+  pinnedProblemId: 2,
+  messages: [
+    { id: 'welcome', author: 'Anika Sharma', text: 'I pinned a medium DP problem for our next study sprint.', time: '09:42' },
+    { id: 'hint', author: 'Rohan Mehta', text: 'Nice. I will share a binary search hint after lunch.', time: '09:48' },
+  ],
+});
+
+const useCollaboration = (user: LocalUser) => {
+  const [state, setState] = useState<CollaborationState>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cp-collaboration') || 'null') as CollaborationState | null;
+      return saved?.members?.length ? saved : defaultCollaboration(user);
+    } catch {
+      return defaultCollaboration(user);
+    }
+  });
+  useEffect(() => {
+    setState(current => {
+      const owner = current.members.find(member => member.id === 'owner');
+      if (!owner || owner.name === user.name && owner.email === user.email) return current;
+      return { ...current, members: current.members.map(member => member.id === 'owner' ? { ...member, name: user.name, email: user.email } : member) };
+    });
+  }, [user.email, user.name]);
+  useEffect(() => { localStorage.setItem('cp-collaboration', JSON.stringify(state)); }, [state]);
+  return [state, setState] as const;
+};
 
 function Login({ onLogin }: { onLogin: (user: LocalUser) => void }) {
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
@@ -57,7 +93,7 @@ function Shell({ children, user, onLogout }: { children: React.ReactNode; user: 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('cp-theme') === 'dark');
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('cp-theme', dark ? 'dark' : 'light'); }, [dark]);
-  const nav = [{ href: '/', label: 'Overview', icon: LayoutDashboard }, { href: '/problems', label: 'Problem library', icon: BookOpen }, { href: '/contest', label: 'Virtual contest', icon: Trophy }, { href: '/revision', label: 'Revision queue', icon: BrainCircuit }, { href: '/analytics', label: 'Analytics', icon: BarChart3 }];
+  const nav = [{ href: '/', label: 'Overview', icon: LayoutDashboard }, { href: '/problems', label: 'Problem library', icon: BookOpen }, { href: '/collaborator', label: 'Collaborator', icon: Users }, { href: '/contest', label: 'Virtual contest', icon: Trophy }, { href: '/revision', label: 'Revision queue', icon: BrainCircuit }, { href: '/analytics', label: 'Analytics', icon: BarChart3 }];
   return <div className="grain min-h-[100dvh] bg-background">
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[256px] flex-col bg-sidebar text-sidebar-foreground transition-transform md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex h-[76px] items-center border-b border-sidebar-border px-6"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"><Code2 size={20}/></div><div className="ml-3"><div className="font-bold tracking-tight">CP Companion</div><div className="mono text-[9px] uppercase tracking-[.2em] opacity-50">practice system</div></div><button aria-label="Close navigation" data-testid="button-close-navigation" onClick={() => setMobileOpen(false)} className="ml-auto md:hidden"><X size={18}/></button></div>
@@ -110,6 +146,60 @@ function Analytics() { const {data,isLoading,isError}=useGetAnalyticsSummary({qu
 
 function Contest() { const [started,setStarted]=useState(false); const [time,setTime]=useState(90*60); useEffect(()=>{if(!started)return; const id=setInterval(()=>setTime(t=>Math.max(0,t-1)),1000);return()=>clearInterval(id)},[started]); const mins=Math.floor(time/60).toString().padStart(2,'0'), secs=(time%60).toString().padStart(2,'0'); const tasks: Array<[string,string,string,boolean]>=[['A','Warm-up: Prefix Sums','Easy',true],['B','The Missing Permutation','Medium',false],['C','Island Hopping','Medium',false],['D','Optimal Routes','Hard',false]]; return <Page eyebrow="Virtual contest" title="Make it count." description="A quiet room for a timed set. No leaderboard, no noise — just the next problem."><div className="grid-paper overflow-hidden rounded-2xl border border-border bg-card"><div className="flex flex-col justify-between gap-5 border-b border-border p-6 md:flex-row md:items-center md:p-8"><div><div className="flex items-center gap-2 text-accent"><Command size={18}/><span className="mono text-[10px] uppercase tracking-[.16em]">solo arena · set 04</span></div><h2 className="mt-4 text-2xl font-bold tracking-tight">The Pattern Hunt</h2><p className="mt-2 max-w-lg text-sm text-muted-foreground">Four carefully chosen problems. Ninety minutes. The goal is not speed — it is recognition.</p></div><div className="flex items-center gap-4"><div className="rounded-xl border border-border bg-background px-5 py-3 text-center"><p className="mono text-[9px] uppercase tracking-widest text-muted-foreground">Time left</p><p className={`mono mt-1 text-2xl font-bold ${started&&time<300?'text-destructive':'text-foreground'}`}>{mins}:{secs}</p></div><button data-testid="button-contest-start" onClick={()=>setStarted(!started)} className={`rounded-lg px-4 py-3 text-sm font-bold ${started?'border border-border bg-background':'bg-primary text-primary-foreground'}`}>{started?'Pause session':'Start contest'}</button></div></div><div className="p-5 md:p-8"><div className="mb-5 flex items-center justify-between"><h3 className="font-semibold">Problem set</h3><span className="mono text-[10px] text-muted-foreground">0 / 4 SUBMITTED</span></div><div className="space-y-2">{tasks.map(([letter,title,diff,done])=><div key={letter} className="flex items-center gap-4 rounded-xl border border-border bg-background p-4"><span className={`mono flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold ${done?'bg-accent text-accent-foreground':'bg-muted text-muted-foreground'}`}>{letter}</span><div className="flex-1"><p className="text-sm font-semibold">{title}</p><div className="mt-1"><Difficulty value={diff}/></div></div><div className="flex items-center gap-3">{done&&<span className="flex items-center gap-1 text-[11px] text-accent"><Check size={14}/> Solved</span>}<button data-testid={`button-contest-open-${letter}`} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:border-accent">Open <ChevronRight className="ml-1 inline" size={13}/></button></div></div>)}</div></div></div></Page>; }
 
+function Collaborator({ user }: { user: LocalUser }) {
+  const { data, isError } = useListProblems(undefined, { query: { queryKey: getListProblemsQueryKey() } });
+  const [localProblems] = useLocal();
+  const problems = data?.length ? data : localProblems;
+  const [state, setState] = useCollaboration(user);
+  const [invite, setInvite] = useState('');
+  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState('');
+  const solvedCount = problems.filter(problem => problem.status === 'Solved').length;
+  const pinned = problems.find(problem => problem.id === state.pinnedProblemId) ?? problems[0];
+  const members = useMemo(() => state.members.map(member => member.id === 'owner' ? { ...member, solved: solvedCount } : member).sort((a, b) => b.solved - a.solved), [solvedCount, state.members]);
+  const inviteFriend = () => {
+    const email = invite.trim().toLowerCase();
+    if (!email || !email.includes('@') || state.members.some(member => member.email === email)) return;
+    const name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+    setState(current => ({ ...current, members: [...current.members, { id: `invite-${Date.now()}`, name, email, role: 'Member', status: 'Invited', solved: 0, streak: 0 }] }));
+    setInvite('');
+    setNotice(`Invite prepared for ${email}.`);
+  };
+  const postMessage = () => {
+    const text = message.trim();
+    if (!text) return;
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setState(current => ({ ...current, messages: [...current.messages, { id: `message-${Date.now()}`, author: user.name, text, time }] }));
+    setMessage('');
+  };
+  const copyInviteLink = () => {
+    navigator.clipboard?.writeText(`${window.location.origin}/collaborator`);
+    setNotice('Collaboration link copied.');
+  };
+  return <Page eyebrow="Study together" title={<>Your shared<br/><span className="text-accent">practice room.</span></>} description="Invite friends, choose one problem to solve together, and keep each other moving.">
+    {isError && <div className="mb-5 flex items-center gap-2 rounded-lg border border-[#d68a1b]/30 bg-[#d68a1b]/5 p-3 text-xs text-[#9b5e08]"><Database size={14}/> Offline mode · collaboration activity is saved on this device.</div>}
+    <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+      <section className="rounded-xl border border-border bg-card p-5 md:p-6">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div><div className="flex items-center gap-2 text-accent"><Users size={17}/><span className="mono text-[10px] font-bold uppercase tracking-[.16em]">Collaborator</span></div><h2 className="mt-3 text-xl font-bold">Build your study circle.</h2><p className="mt-1 text-sm text-muted-foreground">Everyone’s progress is visible here.</p></div><button data-testid="button-copy-collaboration-link" onClick={copyInviteLink} className="flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:border-accent"><Copy size={14}/> Copy room link</button></div>
+        <div className="mt-6 flex gap-2"><input data-testid="input-invite-friend" value={invite} onChange={e => setInvite(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') inviteFriend(); }} type="email" placeholder="friend@example.com" className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent"/><button data-testid="button-invite-friend" onClick={inviteFriend} disabled={!invite.trim()} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"><UserPlus size={16}/> <span className="hidden sm:inline">Invite</span></button></div>
+        {notice && <p data-testid="text-collaboration-notice" className="mt-3 text-xs text-accent">{notice}</p>}
+        <div className="mt-6 space-y-2">{state.members.map(member => <div key={member.id} className="flex items-center gap-3 rounded-lg bg-muted/55 p-3"><div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${member.id === 'owner' ? 'bg-primary text-primary-foreground' : 'bg-accent/15 text-accent'}`}>{member.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{member.name} {member.role === 'You' && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(you)</span>}</p><p className="truncate text-[11px] text-muted-foreground">{member.email}</p></div><span className={`hidden rounded-full px-2 py-1 text-[10px] font-semibold sm:inline ${member.status === 'Active' ? 'bg-accent/10 text-accent' : 'bg-[#d68a1b]/10 text-[#b56d07]'}`}>{member.status}</span><span className="text-right"><span className="mono block text-sm font-bold">{member.id === 'owner' ? solvedCount : member.solved}</span><span className="text-[10px] text-muted-foreground">solved</span></span></div>)}</div>
+      </section>
+      <section className="rounded-xl border border-accent/25 bg-accent/[.06] p-5 md:p-6">
+        <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-accent"><Pin size={16} fill="currentColor"/><span className="mono text-[10px] font-bold uppercase tracking-[.16em]">Pinned for everyone</span></div><h2 className="mt-3 text-xl font-bold">{pinned ? pinned.title : 'Choose a shared problem'}</h2><p className="mt-2 text-sm text-muted-foreground">{pinned ? `${pinned.platform} · ${pinned.topics.join(' · ')}` : 'Select a problem from your library to start together.'}</p></div><Pin className="shrink-0 text-accent" size={22} fill="currentColor"/></div>
+        {pinned && <div className="mt-5 flex items-center justify-between rounded-lg border border-accent/20 bg-card/70 p-3"><Difficulty value={pinned.difficulty}/><span className="text-xs font-semibold text-accent">{pinned.status === 'Solved' ? 'You solved this' : 'Ready to solve'}</span></div>}
+        <label className="mt-5 block text-xs font-semibold">Change pinned problem<select data-testid="select-pinned-problem" value={pinned?.id ?? ''} onChange={e => setState(current => ({ ...current, pinnedProblemId: Number(e.target.value) }))} className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent"><option value="" disabled>Select a problem</option>{problems.map(problem => <option key={problem.id} value={problem.id}>{problem.title}</option>)}</select></label>
+        {pinned?.solutionLink && <a href={pinned.solutionLink} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-accent hover:underline"><Link2 size={14}/> Open problem</a>}
+      </section>
+    </div>
+    <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+      <section className="rounded-xl border border-border bg-card p-5 md:p-6"><div className="flex items-center justify-between"><div><div className="flex items-center gap-2"><MessageCircle size={17} className="text-accent"/><h2 className="font-semibold">Room chat</h2></div><p className="mt-1 text-xs text-muted-foreground">Share hints without giving away the whole solution.</p></div><span className="mono text-[10px] text-muted-foreground">{state.messages.length} NOTES</span></div><div className="mt-5 max-h-[270px] space-y-3 overflow-y-auto pr-1">{state.messages.map(chat => <div key={chat.id} className={`flex gap-3 ${chat.author === user.name ? 'flex-row-reverse text-right' : ''}`}><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold">{chat.author.slice(0, 2).toUpperCase()}</div><div className={`max-w-[82%] rounded-xl px-3 py-2 ${chat.author === user.name ? 'bg-primary text-primary-foreground' : 'bg-muted/70'}`}><p className="text-[11px] font-bold opacity-75">{chat.author}</p><p className="mt-1 text-sm">{chat.text}</p><p className="mt-1 text-[10px] opacity-55">{chat.time}</p></div></div>)}</div><div className="mt-5 flex gap-2 border-t border-border pt-4"><input data-testid="input-collaboration-message" value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') postMessage(); }} placeholder="Write a message or hint..." className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent"/><button data-testid="button-send-collaboration-message" onClick={postMessage} disabled={!message.trim()} aria-label="Send message" className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"><Send size={16}/></button></div></section>
+      <section className="rounded-xl border border-border bg-card p-5 md:p-6"><div className="flex items-center justify-between"><div><div className="flex items-center gap-2"><Trophy size={17} className="text-accent"/><h2 className="font-semibold">Progress leaderboard</h2></div><p className="mt-1 text-xs text-muted-foreground">Solved problems across the room.</p></div><span className="mono text-[10px] text-muted-foreground">LIVE</span></div><div className="mt-5 space-y-2">{members.map((member, index) => <div key={member.id} className={`flex items-center gap-3 rounded-lg border p-3 ${index === 0 ? 'border-accent/25 bg-accent/[.06]' : 'border-transparent bg-muted/45'}`}><span className="mono w-5 text-center text-xs font-bold text-muted-foreground">{index + 1}</span><div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar text-[10px] font-bold text-sidebar-foreground">{member.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{member.name}{index === 0 && <Crown className="ml-1 inline text-[#d68a1b]" size={13} fill="currentColor"/>}</p><p className="text-[10px] text-muted-foreground">{member.streak ? `${member.streak} day streak` : 'Just joined'}</p></div><span className="mono text-sm font-bold">{member.solved}<span className="ml-1 text-[10px] font-normal text-muted-foreground">solved</span></span></div>)}</div><div className="mt-5 rounded-lg bg-muted/55 p-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">Keep going.</span> Solve a problem in your library to move up the board.</div></section>
+    </div>
+  </Page>;
+}
+
 function Settings() {
   const [dark,setDark]=useState(document.documentElement.classList.contains('dark'));
   const [,setLocation]=useLocation();
@@ -123,7 +213,7 @@ function Settings() {
   return <Page eyebrow="Workspace preferences" title="Make it yours." description="Tune your study environment and keep your practice data safe."><div className="max-w-3xl space-y-5"><section className="rounded-xl border border-border bg-card p-5 md:p-6"><div className="flex items-start gap-4"><div className="rounded-lg bg-muted p-2.5"><Sun size={18}/></div><div><h2 className="font-semibold">Appearance</h2><p className="mt-1 text-sm text-muted-foreground">Choose the atmosphere you want to return to.</p></div></div><div className="mt-6 grid grid-cols-2 gap-3"><button data-testid="button-theme-light" onClick={()=>theme(false)} className={`rounded-xl border p-4 text-left ${!dark?'border-accent bg-accent/5':''}`}><div className="h-14 rounded-lg border border-border bg-[#f5f1e8] p-2"><div className="h-2 w-1/2 rounded bg-[#252a3b]"/><div className="mt-2 h-2 w-3/4 rounded bg-[#d9d3c7]"/></div><p className="mt-3 text-xs font-semibold">Light / parchment</p></button><button data-testid="button-theme-dark" onClick={()=>theme(true)} className={`rounded-xl border p-4 text-left ${dark?'border-accent bg-accent/5':''}`}><div className="h-14 rounded-lg border border-[#33394c] bg-[#171a27] p-2"><div className="h-2 w-1/2 rounded bg-[#e9e5d9]"/><div className="mt-2 h-2 w-3/4 rounded bg-[#33394c]"/></div><p className="mt-3 text-xs font-semibold">Dark / midnight</p></button></div></section><section className="rounded-xl border border-border bg-card p-5 md:p-6"><div className="flex items-start gap-4"><div className="rounded-lg bg-muted p-2.5"><Database size={18}/></div><div><h2 className="font-semibold">Data backup</h2><p className="mt-1 text-sm text-muted-foreground">Move your library between devices with JSON or CSV exports.</p></div></div><div className="mt-6 flex flex-wrap gap-2"><button data-testid="button-export-data" onClick={backup} className="flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold hover:border-accent"><Database size={15}/> Export JSON</button><button data-testid="button-export-csv" onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold hover:border-accent"><Database size={15}/> Export CSV</button><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"><Upload size={15}/> Import<input data-testid="input-import-data" type="file" accept=".json,.csv,application/json,text/csv" className="hidden" onChange={e=>{const file=e.target.files?.[0];if(file)importFile(file);e.currentTarget.value='';}}/></label></div></section><section className="rounded-xl border border-destructive/25 bg-destructive/[.03] p-5 md:p-6"><div className="flex items-start gap-4"><div className="rounded-lg bg-destructive/10 p-2.5 text-destructive"><Trash2 size={18}/></div><div><h2 className="font-semibold">Reset workspace</h2><p className="mt-1 text-sm text-muted-foreground">Clear local demo data and return to a blank practice space.</p></div></div><button data-testid="button-reset-workspace" onClick={()=>{if(confirm('Reset your local workspace?')){localStorage.removeItem('cp-problems');setLocal([]);setMessage('Workspace reset.');setLocation('/');}}} className="mt-6 rounded-lg border border-destructive/30 px-4 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/5">Reset local data</button></section>{message&&<p data-testid="status-settings" className="text-xs text-accent">{message}</p>}</div></Page>;
 }
 
-function Router({ user, onLogout }: { user: LocalUser; onLogout: () => void }) { return <Shell user={user} onLogout={onLogout}><Switch><Route path="/" component={Overview}/><Route path="/problems" component={Problems}/><Route path="/contest" component={Contest}/><Route path="/revision" component={Revision}/><Route path="/analytics" component={Analytics}/><Route path="/settings" component={Settings}/><Route component={NotFound}/></Switch></Shell>; }
+function Router({ user, onLogout }: { user: LocalUser; onLogout: () => void }) { return <Shell user={user} onLogout={onLogout}><Switch><Route path="/" component={Overview}/><Route path="/problems" component={Problems}/><Route path="/collaborator">{() => <Collaborator user={user}/>}</Route><Route path="/contest" component={Contest}/><Route path="/revision" component={Revision}/><Route path="/analytics" component={Analytics}/><Route path="/settings" component={Settings}/><Route component={NotFound}/></Switch></Shell>; }
 function App() {
   const [user,setUser]=useState<LocalUser|null>(()=>{try{return JSON.parse(localStorage.getItem('cp-user')||'null') as LocalUser|null;}catch{return null;}});
   if(!user) return <Login onLogin={setUser}/>;

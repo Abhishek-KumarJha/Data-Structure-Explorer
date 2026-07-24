@@ -1,1 +1,2 @@
 - [CP Companion product direction](cp-companion.md) — local-first competitive programming workspace with real API-backed library flows and a browser-safe fallback.
+- [Collaboration room](collaboration-room.md) — study-room features remain browser-local until shared-room APIs and identity are introduced.
