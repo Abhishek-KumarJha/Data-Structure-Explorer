@@ -3,6 +3,7 @@ services:
   - type: web
     name: cp-companion-api
     env: node
+    plan: free
     rootDir: artifacts/api-server
     buildCommand: pnpm install
     startCommand: npx tsx src/index.ts
@@ -20,6 +21,7 @@ services:
   - type: web
     name: cp-companion-web
     env: static
+    plan: free
     rootDir: artifacts/cp-companion
     buildCommand: pnpm install && pnpm run build
     staticPublishPath: dist
@@ -33,3 +35,4 @@ databases:
   - name: cp-companion-db
     databaseName: cp_companion
     user: cp_user
+    plan: free
