@@ -29,7 +29,7 @@ services:
         fromService:
           type: web
           name: cp-companion-api
-          property: url
+          property: host
     routes:
       - type: rewrite
         source: /*
