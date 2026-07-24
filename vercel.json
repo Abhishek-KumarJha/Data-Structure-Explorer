@@ -1,0 +1,17 @@
+{
+  "builds": [
+    {
+      "src": "artifacts/cp-companion/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "artifacts/cp-companion/dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
