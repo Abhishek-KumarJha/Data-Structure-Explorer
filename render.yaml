@@ -4,9 +4,9 @@ services:
     name: cp-companion-api
     env: node
     plan: free
-    rootDir: artifacts/api-server
-    buildCommand: npm install -g pnpm && pnpm install --ignore-scripts
-    startCommand: npx tsx src/index.ts
+    rootDir: .
+    buildCommand: npx pnpm install --ignore-scripts
+    startCommand: npx tsx artifacts/api-server/src/index.ts
     envVars:
       - key: PORT
         value: 5000
@@ -21,9 +21,9 @@ services:
   - type: web
     name: cp-companion-web
     env: static
-    rootDir: artifacts/cp-companion
-    buildCommand: npm install -g pnpm && pnpm install --ignore-scripts && pnpm --filter @workspace/cp-companion run build
-    staticPublishPath: dist
+    rootDir: .
+    buildCommand: npx pnpm install --ignore-scripts && pnpm --filter @workspace/cp-companion run build
+    staticPublishPath: artifacts/cp-companion/dist
     envVars:
       - key: VITE_API_URL
         fromService:
