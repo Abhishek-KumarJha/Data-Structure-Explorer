@@ -21,7 +21,6 @@ services:
   - type: web
     name: cp-companion-web
     env: static
-    plan: free
     rootDir: artifacts/cp-companion
     buildCommand: pnpm install && pnpm run build
     staticPublishPath: dist
