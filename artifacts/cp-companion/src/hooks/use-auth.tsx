@@ -1,6 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-const BASE = import.meta.env.VITE_API_URL ?? '';
+// Normalize: Render's `host` property gives bare hostname (no scheme).
+// Ensure we always have a full URL with https:// for production.
+function normalizeApiUrl(raw: string): string {
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw.replace(/\/$/, '');
+  return `https://${raw.replace(/\/$/, '')}`;
+}
+const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? '');
 
 export interface AuthUser {
   id: number;
@@ -50,19 +57,41 @@ async function apiFetch<T>(
     ...(options.headers ?? {}),
   };
 
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...options,
-    credentials: 'include',
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      ...options,
+      credentials: 'include',
+      headers,
+    });
+  } catch (networkErr) {
+    // Network failure (server offline, CORS preflight blocked, DNS error etc.)
+    throw new Error('Cannot reach the server. Please check your connection or try again later.');
+  }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? 'Request failed');
+    // Try to parse JSON error body; fall back to status text if empty / non-JSON
+    let errMsg = `Request failed (${res.status} ${res.statusText})`;
+    try {
+      const text = await res.text();
+      if (text) {
+        const json = JSON.parse(text);
+        errMsg = json.error ?? json.message ?? errMsg;
+      }
+    } catch {}
+    throw new Error(errMsg);
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json();
+
+  // Guard against empty success bodies
+  try {
+    const text = await res.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Received an invalid response from the server. Please try again.');
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

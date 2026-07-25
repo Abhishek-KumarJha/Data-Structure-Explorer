@@ -1,5 +1,7 @@
 import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import * as schema from "./schema/index.js";
 
 const { Pool } = pg;
@@ -15,12 +17,18 @@ if (process.env.DATABASE_URL) {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle: drizzlePglite } = await import("drizzle-orm/pglite");
 
-  const pgliteClient = new PGlite();
+  // Use a persistent directory so data survives server restarts
+  // Stored at project root / .pglite-data/
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const dataDir = join(__dirname, "..", "..", "..", "..", ".pglite-data");
+
+  const pgliteClient = new PGlite(dataDir);
   db = drizzlePglite({ client: pgliteClient, schema });
 
   // Initialize all 15 tables automatically in PGlite
   await initTablesPGlite(pgliteClient);
 }
+
 
 async function initTablesPGlite(client: any) {
   const ddl = `

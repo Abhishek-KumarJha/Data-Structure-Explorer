@@ -175,4 +175,17 @@ router.put("/auth/profile", requireAuth, async (req, res): Promise<void> => {
   });
 });
 
+// ─── Dev Only: Clear All Users ────────────────────────────────────────────────
+// DELETE /api/auth/users/all  — wipes every user row (cascades to all data).
+// Blocked in production. Use this to reset for fresh registration testing.
+router.delete("/auth/users/all", async (_req, res): Promise<void> => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(403).json({ error: "Not allowed in production" });
+    return;
+  }
+  await db.delete(usersTable);
+  res.json({ message: "All users deleted. You can now register fresh." });
+});
+
 export default router;
+

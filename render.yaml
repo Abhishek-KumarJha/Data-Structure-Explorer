@@ -16,6 +16,11 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: CLIENT_ORIGIN
+        fromService:
+          type: web
+          name: cp-companion-web
+          property: hostURL
 
   # ─── Frontend Static Site ──────────────────────────────────────────────────
   - type: web
@@ -29,7 +34,7 @@ services:
         fromService:
           type: web
           name: cp-companion-api
-          property: host
+          property: hostURL
     routes:
       - type: rewrite
         source: /*

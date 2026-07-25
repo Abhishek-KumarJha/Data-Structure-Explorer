@@ -89,14 +89,14 @@ export default function Login() {
           <div className="mt-7 flex rounded-lg bg-muted p-1">
             <button
               type="button"
-              onClick={() => { setMode('signin'); setError(''); }}
+              onClick={() => { setMode('signin'); setError(''); setPassword(''); setName(''); }}
               className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === 'signin' ? 'bg-card shadow-sm' : ''}`}
             >
               Sign in
             </button>
             <button
               type="button"
-              onClick={() => { setMode('create'); setError(''); }}
+              onClick={() => { setMode('create'); setError(''); setPassword(''); }}
               className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === 'create' ? 'bg-card shadow-sm' : ''}`}
             >
               Create account
@@ -136,6 +136,7 @@ export default function Login() {
                   type={showPw ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
                   placeholder={mode === 'create' ? 'At least 6 characters' : 'Your password'}
                   autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
                   className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm outline-none focus:border-accent"

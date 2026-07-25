@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, copyFile, cp } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -118,6 +118,31 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Copy PGlite WASM assets required at runtime when DATABASE_URL is not set
+  try {
+    const pgliteDistSrc = path.resolve(
+      artifactDir,
+      "../../node_modules/.pnpm/@electric-sql+pglite@0.5.4/node_modules/@electric-sql/pglite/dist"
+    );
+    // Copy all pglite runtime files (wasm, data, initdb, chunks) to dist/
+    await cp(pgliteDistSrc, distDir, {
+      recursive: true,
+      filter: (src) => {
+        const name = path.basename(src);
+        return (
+          name.endsWith(".data") ||
+          name.endsWith(".wasm") ||
+          name.startsWith("chunk-") ||
+          name === "initdb.js" ||
+          name === path.basename(pgliteDistSrc) // the dir itself
+        );
+      },
+    });
+    console.log("✓ Copied PGlite runtime assets to dist/");
+  } catch (e) {
+    console.warn("⚠️  Could not copy PGlite assets — PGlite fallback will not work without DATABASE_URL.", e.message);
+  }
 }
 
 buildAll().catch((err) => {

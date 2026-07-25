@@ -1,6 +1,11 @@
 import { getStoredToken } from '../hooks/use-auth';
 
-const BASE = import.meta.env.VITE_API_URL ?? '';
+function normalizeApiUrl(raw: string): string {
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw.replace(/\/$/, '');
+  return `https://${raw.replace(/\/$/, '')}`;
+}
+const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? '');
 
 export type ApiError = { message: string; status: number };
 
@@ -15,17 +20,25 @@ async function request<T>(
     ...(options.headers ?? {}),
   };
 
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...options,
-    credentials: 'include',
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      ...options,
+      credentials: 'include',
+      headers,
+    });
+  } catch {
+    throw Object.assign(new Error('Cannot reach the server. Please try again.'), { status: 0 });
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
-      const err = await res.json();
-      message = err.error ?? err.message ?? message;
+      const text = await res.text();
+      if (text) {
+        const err = JSON.parse(text);
+        message = err.error ?? err.message ?? message;
+      }
     } catch {}
     const error = new Error(message) as Error & { status: number };
     error.status = res.status;
@@ -33,7 +46,14 @@ async function request<T>(
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json();
+
+  try {
+    const text = await res.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
+  } catch {
+    throw Object.assign(new Error('Invalid server response. Please try again.'), { status: 500 });
+  }
 }
 
 // ─── Typed API helpers ────────────────────────────────────────────────────────
