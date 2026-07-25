@@ -8,6 +8,7 @@ import { z } from "zod/v4";
 
 const router: IRouter = Router();
 const SALT_ROUNDS = 12;
+const isProduction = process.env.NODE_ENV === "production";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 const RegisterBody = z.object({
@@ -60,18 +61,28 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   // Initialize statistics row for new user
   await db.insert(userStatisticsTable).values({ userId: user.id });
 
-  const token = signToken({ userId: user.id, email: user.email, name: user.name });
+  const token = signToken({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+  });
 
   res.cookie("cp-token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
   res.status(201).json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, weeklyGoal: user.weeklyGoal, theme: user.theme },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      weeklyGoal: user.weeklyGoal,
+      theme: user.theme,
+    },
   });
 });
 
@@ -102,18 +113,28 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const token = signToken({ userId: user.id, email: user.email, name: user.name });
+  const token = signToken({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+  });
 
   res.cookie("cp-token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, weeklyGoal: user.weeklyGoal, theme: user.theme },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      weeklyGoal: user.weeklyGoal,
+      theme: user.theme,
+    },
   });
 });
 
@@ -157,7 +178,8 @@ router.put("/auth/profile", requireAuth, async (req, res): Promise<void> => {
   const update: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.name) update.name = parsed.data.name;
   if (parsed.data.email) update.email = parsed.data.email.toLowerCase();
-  if (parsed.data.weeklyGoal !== undefined) update.weeklyGoal = parsed.data.weeklyGoal;
+  if (parsed.data.weeklyGoal !== undefined)
+    update.weeklyGoal = parsed.data.weeklyGoal;
   if (parsed.data.theme) update.theme = parsed.data.theme;
 
   const [user] = await db
@@ -188,4 +210,3 @@ router.delete("/auth/users/all", async (_req, res): Promise<void> => {
 });
 
 export default router;
-

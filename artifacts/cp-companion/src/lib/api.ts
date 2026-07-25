@@ -1,34 +1,48 @@
-import { getStoredToken } from '../hooks/use-auth';
+import { getStoredToken } from "../hooks/use-auth";
 
 function normalizeApiUrl(raw: string): string {
-  if (!raw) return '';
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw.replace(/\/$/, '');
-  return `https://${raw.replace(/\/$/, '')}`;
+  if (!raw) return "";
+  if (raw.startsWith("http://") || raw.startsWith("https://"))
+    return raw.replace(/\/$/, "");
+  return `https://${raw.replace(/\/$/, "")}`;
 }
-const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? '');
+const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? "");
+
+function resolveApiRoot(): string {
+  if (BASE) return `${BASE}/api`;
+  if (import.meta.env.PROD) {
+    throw Object.assign(
+      new Error(
+        "API is not configured. Set VITE_API_URL to your backend URL and redeploy.",
+      ),
+      { status: 500 },
+    );
+  }
+  return "/api";
+}
 
 export type ApiError = { message: string; status: number };
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers ?? {}),
   };
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}/api${path}`, {
+    res = await fetch(`${resolveApiRoot()}${path}`, {
       ...options,
-      credentials: 'include',
+      credentials: "include",
       headers,
     });
   } catch {
-    throw Object.assign(new Error('Cannot reach the server. Please try again.'), { status: 0 });
+    throw Object.assign(
+      new Error("Cannot reach the server. Please try again."),
+      { status: 0 },
+    );
   }
 
   if (!res.ok) {
@@ -52,7 +66,10 @@ async function request<T>(
     if (!text) return undefined as T;
     return JSON.parse(text) as T;
   } catch {
-    throw Object.assign(new Error('Invalid server response. Please try again.'), { status: 500 });
+    throw Object.assign(
+      new Error("Invalid server response. Please try again."),
+      { status: 500 },
+    );
   }
 }
 
@@ -60,12 +77,21 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+    request<T>(path, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
   put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
+    request<T>(path, {
+      method: "PUT",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
   patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+    request<T>(path, {
+      method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 // ─── Problem types ────────────────────────────────────────────────────────────
@@ -73,11 +99,11 @@ export interface Problem {
   id: number;
   userId: number;
   title: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
+  difficulty: "Easy" | "Medium" | "Hard";
   platform: string;
   topics: string[];
   companyTags: string[];
-  status: 'Solved' | 'Unsolved';
+  status: "Solved" | "Unsolved";
   favorite: boolean;
   bookmark: boolean;
   notes: string;

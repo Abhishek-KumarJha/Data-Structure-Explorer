@@ -11,9 +11,12 @@ export let db: any;
 
 if (process.env.DATABASE_URL) {
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  await initTablesPostgres(pool);
   db = drizzleNodePg(pool, { schema });
 } else {
-  console.log("ℹ️ DATABASE_URL not set — starting WASM PostgreSQL engine (PGlite)...");
+  console.log(
+    "ℹ️ DATABASE_URL not set — starting WASM PostgreSQL engine (PGlite)...",
+  );
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle: drizzlePglite } = await import("drizzle-orm/pglite");
 
@@ -29,9 +32,8 @@ if (process.env.DATABASE_URL) {
   await initTablesPGlite(pgliteClient);
 }
 
-
-async function initTablesPGlite(client: any) {
-  const ddl = `
+function getBootstrapDDL(): string {
+  return `
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -182,7 +184,71 @@ async function initTablesPGlite(client: any) {
       CONSTRAINT bookmarks_user_problem_idx UNIQUE (user_id, problem_id)
     );
   `;
-  await client.exec(ddl);
+}
+
+async function initTablesPostgres(client: pg.Pool) {
+  await client.query(getBootstrapDDL());
+  await ensureUsersTableCompatibilityPostgres(client);
+}
+
+async function ensureUsersTableCompatibilityPostgres(client: pg.Pool) {
+  // Some older deployments used a different users table shape.
+  // Keep startup resilient by upgrading critical auth columns in place.
+  await client.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_goal INTEGER;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE;
+  `);
+
+  const legacyPasswordCol = await client.query(`
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'users'
+      AND column_name = 'password'
+    LIMIT 1;
+  `);
+
+  if (legacyPasswordCol.rowCount && legacyPasswordCol.rowCount > 0) {
+    await client.query(`
+      UPDATE users
+      SET password_hash = password
+      WHERE (password_hash IS NULL OR password_hash = '')
+        AND password IS NOT NULL;
+    `);
+  }
+
+  await client.query(`
+    UPDATE users SET weekly_goal = 10 WHERE weekly_goal IS NULL;
+    UPDATE users SET theme = 'dark' WHERE theme IS NULL OR theme = '';
+    UPDATE users SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE users SET updated_at = NOW() WHERE updated_at IS NULL;
+    UPDATE users
+    SET password_hash = '$2b$12$A0rmS0qgE9Y9x3B3g7QIIuLqM5u3uol8mCtSYf3SNEA2P4eXg7uA2'
+    WHERE password_hash IS NULL OR password_hash = '';
+  `);
+
+  await client.query(`
+    ALTER TABLE users ALTER COLUMN password_hash SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN weekly_goal SET DEFAULT 10;
+    ALTER TABLE users ALTER COLUMN weekly_goal SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'dark';
+    ALTER TABLE users ALTER COLUMN theme SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN created_at SET DEFAULT NOW();
+    ALTER TABLE users ALTER COLUMN created_at SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN updated_at SET DEFAULT NOW();
+    ALTER TABLE users ALTER COLUMN updated_at SET NOT NULL;
+  `);
+
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users(email);
+  `);
+}
+
+async function initTablesPGlite(client: any) {
+  await client.exec(getBootstrapDDL());
 }
 
 export * from "./schema/index.js";

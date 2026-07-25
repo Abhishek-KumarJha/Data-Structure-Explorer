@@ -21,6 +21,8 @@ services:
           type: web
           name: cp-companion-web
           property: hostURL
+      - key: ADDITIONAL_CLIENT_ORIGINS
+        sync: false
 
   # ─── Frontend Static Site ──────────────────────────────────────────────────
   - type: web
