@@ -9,6 +9,7 @@ import searchRouter from "./search.js";
 import notesRouter from "./notes.js";
 import importExportRouter from "./import-export.js";
 import settingsRouter from "./settings.js";
+import seedRouter from "./seed.js";
 
 const router: IRouter = Router();
 
@@ -27,5 +28,7 @@ router.use(searchRouter);
 router.use(notesRouter);
 router.use(importExportRouter);
 router.use(settingsRouter);
+router.use(seedRouter);
 
 export default router;
+
