@@ -7,14 +7,18 @@ import {
 } from "react";
 
 // Normalize: Render's `host` property gives bare hostname (no scheme).
-// Ensure we always have a full URL with https:// for production.
+// Ensure we always have a full URL with https:// for production. In
+// development, default to the local API server if `VITE_API_URL` is not set.
 function normalizeApiUrl(raw: string): string {
   if (!raw) return "";
   if (raw.startsWith("http://") || raw.startsWith("https://"))
     return raw.replace(/\/$/, "");
   return `https://${raw.replace(/\/$/, "")}`;
 }
-const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? "");
+const DEV_FALLBACK = import.meta.env.DEV ? "http://localhost:4000" : "";
+const BASE = normalizeApiUrl(
+  import.meta.env.VITE_API_URL ?? DEV_FALLBACK ?? "",
+);
 
 function resolveApiRoot(): string {
   if (BASE) return `${BASE}/api`;

@@ -1,37 +1,41 @@
-import { useState, FormEvent } from 'react';
-import { Code2, LogIn, Plus, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { useAuth } from '../hooks/use-auth';
+import { useState, FormEvent } from "react";
+import { Code2, LogIn, Plus, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useAuth } from "../hooks/use-auth";
+import { useLocation } from "wouter";
 
 export default function Login() {
   const { login, register } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [, setLocation] = useLocation();
+  const [mode, setMode] = useState<"signin" | "create">("signin");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
-    if (mode === 'create' && name.trim().length < 2) {
-      setError('Name must be at least 2 characters.');
+    setError("");
+    if (mode === "create" && name.trim().length < 2) {
+      setError("Name must be at least 2 characters.");
       return;
     }
     if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+      setError("Password must be at least 6 characters.");
       return;
     }
     setLoading(true);
     try {
-      if (mode === 'create') {
+      if (mode === "create") {
         await register(name.trim(), email.trim(), password);
+        setLocation("/");
       } else {
         await login(email.trim(), password);
+        setLocation("/");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -46,17 +50,30 @@ export default function Login() {
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sidebar-primary-foreground/15">
               <Code2 size={23} />
             </div>
-            <p className="mono mt-5 text-[10px] uppercase tracking-[.2em] opacity-75">CP Companion</p>
+            <p className="mono mt-5 text-[10px] uppercase tracking-[.2em] opacity-75">
+              CP Companion
+            </p>
             <h1 className="mt-8 text-4xl font-bold leading-tight tracking-[-.05em]">
-              Practice with<br />intent.
+              Practice with
+              <br />
+              intent.
             </h1>
             <p className="mt-4 max-w-xs text-sm leading-6 opacity-75">
-              A focused workspace for competitive programming practice — track problems, schedule revisions, and run virtual contests.
+              A focused workspace for competitive programming practice — track
+              problems, schedule revisions, and run virtual contests.
             </p>
           </div>
           <div className="space-y-2">
-            {['Problem Library', 'Smart Revision Queue', 'Virtual Contests', 'Live Analytics'].map((feat) => (
-              <p key={feat} className="flex items-center gap-2 text-xs opacity-70">
+            {[
+              "Problem Library",
+              "Smart Revision Queue",
+              "Virtual Contests",
+              "Live Analytics",
+            ].map((feat) => (
+              <p
+                key={feat}
+                className="flex items-center gap-2 text-xs opacity-70"
+              >
                 <span className="h-1 w-1 rounded-full bg-sidebar-primary-foreground/70" />
                 {feat}
               </p>
@@ -74,37 +91,48 @@ export default function Login() {
           </div>
 
           <p className="mono mt-8 text-[10px] font-bold uppercase tracking-[.18em] text-accent md:mt-0">
-            {mode === 'signin' ? 'Welcome back' : 'Get started'}
+            {mode === "signin" ? "Welcome back" : "Get started"}
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-[-.04em]">
-            {mode === 'signin' ? 'Pick up where you left off.' : 'Create your account.'}
+            {mode === "signin"
+              ? "Pick up where you left off."
+              : "Create your account."}
           </h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            {mode === 'signin'
-              ? 'Your practice data is stored securely in the cloud.'
-              : 'Start tracking your competitive programming journey.'}
+            {mode === "signin"
+              ? "Your practice data is stored securely in the cloud."
+              : "Start tracking your competitive programming journey."}
           </p>
 
           {/* Mode toggle */}
           <div className="mt-7 flex rounded-lg bg-muted p-1">
             <button
               type="button"
-              onClick={() => { setMode('signin'); setError(''); setPassword(''); setName(''); }}
-              className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === 'signin' ? 'bg-card shadow-sm' : ''}`}
+              onClick={() => {
+                setMode("signin");
+                setError("");
+                setPassword("");
+                setName("");
+              }}
+              className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === "signin" ? "bg-card shadow-sm" : ""}`}
             >
               Sign in
             </button>
             <button
               type="button"
-              onClick={() => { setMode('create'); setError(''); setPassword(''); }}
-              className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === 'create' ? 'bg-card shadow-sm' : ''}`}
+              onClick={() => {
+                setMode("create");
+                setError("");
+                setPassword("");
+              }}
+              className={`flex-1 rounded-md py-2 text-xs font-semibold transition-colors ${mode === "create" ? "bg-card shadow-sm" : ""}`}
             >
               Create account
             </button>
           </div>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
-            {mode === 'create' && (
+            {mode === "create" && (
               <label className="block text-xs font-semibold">
                 Full name
                 <input
@@ -133,12 +161,20 @@ export default function Login() {
               Password
               <div className="relative mt-2">
                 <input
-                  type={showPw ? 'text' : 'password'}
+                  type={showPw ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-                  placeholder={mode === 'create' ? 'At least 6 characters' : 'Your password'}
-                  autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+                  onInput={(e) =>
+                    setPassword((e.target as HTMLInputElement).value)
+                  }
+                  placeholder={
+                    mode === "create"
+                      ? "At least 6 characters"
+                      : "Your password"
+                  }
+                  autoComplete={
+                    mode === "create" ? "new-password" : "current-password"
+                  }
                   className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm outline-none focus:border-accent"
                 />
                 <button
@@ -164,12 +200,16 @@ export default function Login() {
             >
               {loading ? (
                 <Loader2 size={16} className="animate-spin" />
-              ) : mode === 'signin' ? (
+              ) : mode === "signin" ? (
                 <LogIn size={16} />
               ) : (
                 <Plus size={16} />
               )}
-              {loading ? 'Please wait...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+              {loading
+                ? "Please wait..."
+                : mode === "signin"
+                  ? "Sign in"
+                  : "Create account"}
             </button>
           </form>
 
