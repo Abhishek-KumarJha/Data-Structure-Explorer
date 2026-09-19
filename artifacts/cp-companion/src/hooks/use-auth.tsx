@@ -6,29 +6,7 @@ import {
   ReactNode,
 } from "react";
 
-// Normalize: Render's `host` property gives bare hostname (no scheme).
-// Ensure we always have a full URL with https:// for production. In
-// development, default to the local API server if `VITE_API_URL` is not set.
-function normalizeApiUrl(raw: string): string {
-  if (!raw) return "";
-  if (raw.startsWith("http://") || raw.startsWith("https://"))
-    return raw.replace(/\/$/, "");
-  return `https://${raw.replace(/\/$/, "")}`;
-}
-const DEV_FALLBACK = import.meta.env.DEV ? "http://localhost:4000" : "";
-const BASE = normalizeApiUrl(
-  import.meta.env.VITE_API_URL ?? DEV_FALLBACK ?? "",
-);
-
-function resolveApiRoot(): string {
-  if (BASE) return `${BASE}/api`;
-  if (import.meta.env.PROD) {
-    throw new Error(
-      "API is not configured. Set VITE_API_URL to your backend URL and redeploy.",
-    );
-  }
-  return "/api";
-}
+import { API_ROOT } from "../lib/api-config";
 
 export interface AuthUser {
   id: number;
@@ -90,7 +68,7 @@ async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${resolveApiRoot()}${path}`, {
+    res = await fetch(`${API_ROOT}${path}`, {
       ...options,
       credentials: "include",
       headers,
@@ -102,6 +80,13 @@ async function apiFetch<T>(
     );
   }
 
+  if (res.status === 401) {
+    setStoredToken(null);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
+  }
+
   if (!res.ok) {
     // Try to parse JSON error body; fall back to status text if empty / non-JSON
     let errMsg = `Request failed (${res.status} ${res.statusText})`;
@@ -109,7 +94,11 @@ async function apiFetch<T>(
       const text = await res.text();
       if (text) {
         const json = JSON.parse(text);
-        errMsg = json.error ?? json.message ?? errMsg;
+        if (typeof json.error === "object" && json.error !== null) {
+          errMsg = json.error.message ?? errMsg;
+        } else {
+          errMsg = json.error ?? json.message ?? errMsg;
+        }
       }
     } catch {}
     throw new Error(errMsg);
@@ -136,19 +125,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading: true,
   });
 
-  // On mount: verify stored token
+  // On mount: verify stored token and listen for expiration
   useEffect(() => {
+    const handleExpired = () => {
+      setStoredToken(null);
+      setState({ user: null, token: null, loading: false });
+    };
+
+    window.addEventListener("auth:expired", handleExpired);
+
     const token = getStoredToken();
     if (!token) {
       setState((s) => ({ ...s, loading: false }));
-      return;
+      return () => window.removeEventListener("auth:expired", handleExpired);
     }
+
     apiFetch<AuthUser>("/auth/me", {}, token)
       .then((user) => setState({ user, token, loading: false }))
       .catch(() => {
         setStoredToken(null);
         setState({ user: null, token: null, loading: false });
       });
+
+    return () => window.removeEventListener("auth:expired", handleExpired);
   }, []);
 
   const login = async (email: string, password: string): Promise<AuthUser> => {

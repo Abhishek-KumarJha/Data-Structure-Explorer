@@ -143,41 +143,43 @@ router.post("/import/json", requireAuth, async (req, res): Promise<void> => {
   );
   const duplicatesSkipped = problems.length - newProblems.length;
 
-  if (mode === "replace") {
-    // Delete all existing problems for this user
-    await db.delete(problemsTable).where(eq(problemsTable.userId, userId));
-    // Re-insert everything
-    const rows = problems.map((p) => ({
-      userId,
-      ...p,
-      dateAdded: p.dateAdded ?? today,
-      solvedDate: p.solvedDate ?? null,
-    }));
-    if (rows.length > 0) {
-      await db.insert(problemsTable).values(rows);
-    }
-  } else {
-    // Append mode: only insert non-duplicates
-    if (newProblems.length > 0) {
-      const rows = newProblems.map((p) => ({
-        userId,
+  const importedCount = mode === "replace" ? problems.length : newProblems.length;
+
+  await db.transaction(async (tx: any) => {
+    if (mode === "replace") {
+      // Delete all existing problems for this user atomically
+      await tx.delete(problemsTable).where(eq(problemsTable.userId, userId));
+      // Re-insert everything
+      const rows = problems.map((p) => ({
         ...p,
+        userId,
         dateAdded: p.dateAdded ?? today,
         solvedDate: p.solvedDate ?? null,
       }));
-      await db.insert(problemsTable).values(rows);
+      if (rows.length > 0) {
+        await tx.insert(problemsTable).values(rows);
+      }
+    } else {
+      // Append mode: only insert non-duplicates
+      if (newProblems.length > 0) {
+        const rows = newProblems.map((p) => ({
+          ...p,
+          userId,
+          dateAdded: p.dateAdded ?? today,
+          solvedDate: p.solvedDate ?? null,
+        }));
+        await tx.insert(problemsTable).values(rows);
+      }
     }
-  }
 
-  const importedCount = mode === "replace" ? problems.length : newProblems.length;
-
-  await db.insert(importExportHistoryTable).values({
-    userId,
-    type: "import",
-    format: "json",
-    filename: "import.json",
-    recordCount: importedCount,
-    status: "success",
+    await tx.insert(importExportHistoryTable).values({
+      userId,
+      type: "import",
+      format: "json",
+      filename: "import.json",
+      recordCount: importedCount,
+      status: "success",
+    });
   });
 
   res.json({
@@ -259,28 +261,30 @@ router.post("/import/csv", requireAuth, async (req, res): Promise<void> => {
   let importedCount = 0;
   let duplicatesSkipped = 0;
 
-  if (importMode === "replace") {
-    await db.delete(problemsTable).where(eq(problemsTable.userId, userId));
-    await db.insert(problemsTable).values(problems);
-    importedCount = problems.length;
-  } else {
-    const newProblems = problems.filter(
-      (p) => !existingTitles.has(p.title.toLowerCase()),
-    );
-    duplicatesSkipped = problems.length - newProblems.length;
-    if (newProblems.length > 0) {
-      await db.insert(problemsTable).values(newProblems);
+  await db.transaction(async (tx: any) => {
+    if (importMode === "replace") {
+      await tx.delete(problemsTable).where(eq(problemsTable.userId, userId));
+      await tx.insert(problemsTable).values(problems);
+      importedCount = problems.length;
+    } else {
+      const newProblems = problems.filter(
+        (p) => !existingTitles.has(p.title.toLowerCase()),
+      );
+      duplicatesSkipped = problems.length - newProblems.length;
+      if (newProblems.length > 0) {
+        await tx.insert(problemsTable).values(newProblems);
+      }
+      importedCount = newProblems.length;
     }
-    importedCount = newProblems.length;
-  }
 
-  await db.insert(importExportHistoryTable).values({
-    userId,
-    type: "import",
-    format: "csv",
-    filename: "import.csv",
-    recordCount: importedCount,
-    status: "success",
+    await tx.insert(importExportHistoryTable).values({
+      userId,
+      type: "import",
+      format: "csv",
+      filename: "import.csv",
+      recordCount: importedCount,
+      status: "success",
+    });
   });
 
   res.json({ imported: importedCount, duplicatesSkipped, total: problems.length, mode: importMode });

@@ -8,9 +8,15 @@ const { Pool } = pg;
 
 export let pool: pg.Pool | null = null;
 export let db: any;
+let pgliteInstance: any = null;
 
 if (process.env.DATABASE_URL) {
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
   await initTablesPostgres(pool);
   db = drizzleNodePg(pool, { schema });
 } else {
@@ -26,10 +32,22 @@ if (process.env.DATABASE_URL) {
   const dataDir = join(__dirname, "..", "..", "..", "..", ".pglite-data");
 
   const pgliteClient = new PGlite(dataDir);
+  pgliteInstance = pgliteClient;
   db = drizzlePglite({ client: pgliteClient, schema });
 
   // Initialize all 15 tables automatically in PGlite
   await initTablesPGlite(pgliteClient);
+}
+
+export async function closeDatabase(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+  if (pgliteInstance?.close) {
+    await pgliteInstance.close();
+    pgliteInstance = null;
+  }
 }
 
 function getBootstrapDDL(): string {
@@ -183,6 +201,19 @@ function getBootstrapDDL(): string {
       created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
       CONSTRAINT bookmarks_user_problem_idx UNIQUE (user_id, problem_id)
     );
+
+    CREATE TABLE IF NOT EXISTS revision_reviews (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+      revision_queue_id INTEGER REFERENCES revision_queue(id) ON DELETE SET NULL,
+      quality INTEGER NOT NULL,
+      previous_interval_days INTEGER,
+      new_interval_days INTEGER,
+      previous_ease_factor REAL,
+      new_ease_factor REAL,
+      reviewed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );
   `;
 }
 
@@ -226,7 +257,7 @@ async function ensureUsersTableCompatibilityPostgres(client: pg.Pool) {
     UPDATE users SET created_at = NOW() WHERE created_at IS NULL;
     UPDATE users SET updated_at = NOW() WHERE updated_at IS NULL;
     UPDATE users
-    SET password_hash = '$2b$12$A0rmS0qgE9Y9x3B3g7QIIuLqM5u3uol8mCtSYf3SNEA2P4eXg7uA2'
+    SET password_hash = '!LOCKED!' || gen_random_uuid()::text
     WHERE password_hash IS NULL OR password_hash = '';
   `);
 

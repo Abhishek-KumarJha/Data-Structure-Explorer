@@ -98,23 +98,62 @@ router.post("/contests", requireAuth, async (req, res): Promise<void> => {
     selectedIds = selected.map((p) => p.id);
   }
 
-  // Create contest
+  // Create contest and assign problems atomically
+  const [contest, problems] = await db.transaction(async (tx: any) => {
+    const [c] = await tx
+      .insert(contestsTable)
+      .values({ userId, name, type, durationMinutes, endsAt })
+      .returning();
+
+    // Assign problems with labels A, B, C, ...
+    const labels = "ABCDEFGH";
+    const contestProblems = selectedIds.map((problemId, i) => ({
+      contestId: c.id,
+      problemId,
+      label: labels[i] ?? String(i + 1),
+    }));
+
+    await tx.insert(contestProblemsTable).values(contestProblems);
+
+    const cpRows = await tx
+      .select({ cp: contestProblemsTable, p: problemsTable })
+      .from(contestProblemsTable)
+      .innerJoin(problemsTable, eq(contestProblemsTable.problemId, problemsTable.id))
+      .where(eq(contestProblemsTable.contestId, c.id))
+      .orderBy(contestProblemsTable.label);
+
+    return [c, cpRows];
+  });
+
+  res.status(201).json({
+    ...contest,
+    problems: problems.map(({ cp, p }: { cp: any; p: any }) => ({ ...p, label: cp.label, solved: cp.solved, timeTakenSeconds: cp.timeTakenSeconds })),
+  });
+});
+
+// ─── Get Active Contest (for browser refresh & resume) ────────────────────────
+router.get("/contests/active", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.user!.userId;
+  const now = new Date();
+
   const [contest] = await db
-    .insert(contestsTable)
-    .values({ userId, name, type, durationMinutes, endsAt })
-    .returning();
+    .select()
+    .from(contestsTable)
+    .where(
+      and(
+        eq(contestsTable.userId, userId),
+        eq(contestsTable.status, "active"),
+        gte(contestsTable.endsAt, now),
+      ),
+    )
+    .orderBy(desc(contestsTable.startedAt))
+    .limit(1);
 
-  // Assign problems with labels A, B, C, ...
-  const labels = "ABCDEFGH";
-  const contestProblems = selectedIds.map((problemId, i) => ({
-    contestId: contest.id,
-    problemId,
-    label: labels[i] ?? String(i + 1),
-  }));
+  if (!contest) {
+    res.json({ active: null });
+    return;
+  }
 
-  await db.insert(contestProblemsTable).values(contestProblems);
-
-  // Return full contest with problems
   const problems = await db
     .select({ cp: contestProblemsTable, p: problemsTable })
     .from(contestProblemsTable)
@@ -122,9 +161,20 @@ router.post("/contests", requireAuth, async (req, res): Promise<void> => {
     .where(eq(contestProblemsTable.contestId, contest.id))
     .orderBy(contestProblemsTable.label);
 
-  res.status(201).json({
-    ...contest,
-    problems: problems.map(({ cp, p }: { cp: any; p: any }) => ({ ...p, label: cp.label, solved: cp.solved, timeTakenSeconds: cp.timeTakenSeconds })),
+  const timeRemaining = Math.max(0, Math.floor((new Date(contest.endsAt).getTime() - Date.now()) / 1000));
+
+  res.json({
+    active: {
+      ...contest,
+      timeRemaining,
+      problems: problems.map(({ cp, p }: { cp: any; p: any }) => ({
+        ...p,
+        label: cp.label,
+        solved: cp.solved,
+        submittedAt: cp.submittedAt,
+        timeTakenSeconds: cp.timeTakenSeconds,
+      })),
+    },
   });
 });
 
@@ -209,33 +259,48 @@ router.post(
       return;
     }
 
-    // Mark problem as solved
-    await db
-      .update(contestProblemsTable)
-      .set({
-        solved: true,
-        submittedAt: new Date(),
-        timeTakenSeconds: parsed.data.timeTakenSeconds,
-      })
-      .where(
-        and(
-          eq(contestProblemsTable.contestId, contestId),
-          eq(contestProblemsTable.problemId, problemId),
-        ),
-      );
+    const now = new Date();
+    if (new Date(contest.endsAt) <= now) {
+      await db
+        .update(contestsTable)
+        .set({ status: "completed", completedAt: contest.endsAt })
+        .where(eq(contestsTable.id, contestId));
+      res.status(400).json({ error: "Contest duration has ended. Submissions are no longer accepted." });
+      return;
+    }
 
-    // Update contest score
-    const [stats] = await db
-      .select({ solved: sql<number>`count(*) filter (where solved = true)::int` })
-      .from(contestProblemsTable)
-      .where(eq(contestProblemsTable.contestId, contestId));
+    const score = await db.transaction(async (tx: any) => {
+      // Mark problem as solved
+      await tx
+        .update(contestProblemsTable)
+        .set({
+          solved: true,
+          submittedAt: new Date(),
+          timeTakenSeconds: parsed.data.timeTakenSeconds,
+        })
+        .where(
+          and(
+            eq(contestProblemsTable.contestId, contestId),
+            eq(contestProblemsTable.problemId, problemId),
+          ),
+        );
 
-    await db
-      .update(contestsTable)
-      .set({ score: stats?.solved ?? 0 })
-      .where(eq(contestsTable.id, contestId));
+      // Update contest score atomically
+      const [stats] = await tx
+        .select({ solved: sql<number>`count(*) filter (where solved = true)::int` })
+        .from(contestProblemsTable)
+        .where(eq(contestProblemsTable.contestId, contestId));
 
-    res.json({ message: "Problem submitted", score: stats?.solved ?? 0 });
+      const newScore = stats?.solved ?? 0;
+      await tx
+        .update(contestsTable)
+        .set({ score: newScore })
+        .where(eq(contestsTable.id, contestId));
+
+      return newScore;
+    });
+
+    res.json({ message: "Problem submitted", score });
   },
 );
 

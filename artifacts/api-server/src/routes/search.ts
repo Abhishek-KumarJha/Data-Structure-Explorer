@@ -1,14 +1,14 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { db, problemsTable, searchHistoryTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth.js";
-import { Trie } from "../lib/dsa/trie.js";
+import { Trie, type SearchSuggestion } from "../lib/dsa/trie.js";
+import { buildProblemSearchFilters, sanitizeSearchQuery } from "../lib/search-filters.js";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
-// In-memory Trie cache per user (reset on server restart, rebuilt on demand)
-// In production, consider Redis for distributed caching
+// In-memory Trie cache per user (rebuilt on demand or invalidated on mutations)
 const userTries = new Map<number, { trie: Trie; builtAt: number }>();
 const TRIE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
 
@@ -18,27 +18,44 @@ async function getOrBuildTrie(userId: number): Promise<Trie> {
     return cached.trie;
   }
 
-  // Build Trie from user's problems — O(n * k)
   const problems = await db
     .select({
       id: problemsTable.id,
       title: problemsTable.title,
       platform: problemsTable.platform,
       difficulty: problemsTable.difficulty,
+      topics: problemsTable.topics,
     })
     .from(problemsTable)
     .where(eq(problemsTable.userId, userId));
 
   const trie = new Trie();
   for (const p of problems) {
-    // Index each word in title separately for better autocomplete
-    const words = p.title.split(/\s+/);
-    trie.insert(p.title, { id: p.id, platform: p.platform, difficulty: p.difficulty });
+    const meta = {
+      id: p.id,
+      title: p.title,
+      platform: p.platform,
+      difficulty: p.difficulty,
+      topics: p.topics,
+    };
+
+    // Index full title
+    trie.insert(p.title, meta);
+
+    // Index word tokens
+    const words = p.title.split(/[\s\-_:,.]+/);
     for (const word of words) {
-      if (word.length >= 3) {
-        // Only index words 3+ chars
-        trie.insert(word, { id: p.id, platform: p.platform, difficulty: p.difficulty });
+      if (word.length >= 2) {
+        trie.insert(word, meta);
       }
+    }
+
+    // Index platform
+    trie.insert(p.platform, meta);
+
+    // Index topics
+    for (const topic of p.topics) {
+      trie.insert(topic, meta);
     }
   }
 
@@ -46,7 +63,6 @@ async function getOrBuildTrie(userId: number): Promise<Trie> {
   return trie;
 }
 
-// Invalidate cached Trie when problems change
 export function invalidateTrieCache(userId: number): void {
   userTries.delete(userId);
 }
@@ -59,8 +75,43 @@ const SearchQuery = z.object({
   topic: z.string().optional(),
   company: z.string().optional(),
   favoritesOnly: z.string().optional().transform((v) => v === "true"),
-  limit: z.string().optional().transform((v) => Math.min(50, parseInt(v ?? "20", 10))),
+  bookmarksOnly: z.string().optional().transform((v) => v === "true"),
+  page: z.string().optional().transform((v) => Math.max(1, parseInt(v ?? "1", 10))),
+  limit: z.string().optional().transform((v) => Math.min(50, Math.max(1, parseInt(v ?? "20", 10)))),
 });
+
+async function recordSearchHistory(userId: number, rawQuery: string, resultCount: number): Promise<void> {
+  const query = rawQuery.trim();
+  if (!query) return;
+
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  // Check if identical query was recorded within the last 5 minutes
+  const [existing] = await db
+    .select({ id: searchHistoryTable.id })
+    .from(searchHistoryTable)
+    .where(
+      and(
+        eq(searchHistoryTable.userId, userId),
+        eq(searchHistoryTable.query, query),
+        gt(searchHistoryTable.searchedAt, fiveMinutesAgo),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    // Update timestamp and result count instead of creating duplicate row
+    await db
+      .update(searchHistoryTable)
+      .set({ searchedAt: new Date(), resultCount })
+      .where(eq(searchHistoryTable.id, existing.id));
+  } else {
+    await db
+      .insert(searchHistoryTable)
+      .values({ userId, query, resultCount })
+      .catch(() => {});
+  }
+}
 
 // ─── Full-text Search ─────────────────────────────────────────────────────────
 router.get("/search", requireAuth, async (req, res): Promise<void> => {
@@ -70,53 +121,125 @@ router.get("/search", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const { q, difficulty, platform, status, topic, company, favoritesOnly, limit } = parsed.data;
+  const {
+    q,
+    difficulty,
+    platform,
+    status,
+    topic,
+    company,
+    favoritesOnly,
+    bookmarksOnly,
+    page,
+    limit,
+  } = parsed.data;
+
   const userId = req.user!.userId;
+  const offset = (page - 1) * limit;
 
-  const filters = [
-    eq(problemsTable.userId, userId),
-    or(
-      ilike(problemsTable.title, `%${q}%`),
-      ilike(problemsTable.platform, `%${q}%`),
-      sql`${problemsTable.topics}::text ilike ${"%" + q + "%"}`,
-      sql`${problemsTable.companyTags}::text ilike ${"%" + q + "%"}`,
-    )!,
-  ];
+  const filters = buildProblemSearchFilters({
+    userId,
+    search: q,
+    difficulty,
+    platform,
+    status,
+    favoritesOnly,
+    bookmarksOnly,
+    topic,
+    company,
+  });
 
-  if (difficulty && difficulty !== "All") filters.push(eq(problemsTable.difficulty, difficulty));
-  if (platform) filters.push(ilike(problemsTable.platform, `%${platform}%`));
-  if (status && status !== "All") filters.push(eq(problemsTable.status, status));
-  if (topic) filters.push(sql`${problemsTable.topics}::text ilike ${"%" + topic + "%"}`);
-  if (company) filters.push(sql`${problemsTable.companyTags}::text ilike ${"%" + company + "%"}`);
-  if (favoritesOnly) filters.push(eq(problemsTable.favorite, true));
+  const [results, countResult] = await Promise.all([
+    db
+      .select()
+      .from(problemsTable)
+      .where(and(...filters))
+      .orderBy(desc(problemsTable.dateAdded), desc(problemsTable.id))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(problemsTable)
+      .where(and(...filters)),
+  ]);
 
-  const results = await db
-    .select()
-    .from(problemsTable)
-    .where(and(...filters))
-    .limit(limit);
+  const total = countResult[0]?.count ?? 0;
 
-  // Save to search history (non-blocking)
-  db.insert(searchHistoryTable)
-    .values({ userId, query: q, resultCount: results.length })
-    .catch(() => {}); // swallow error — not critical
+  // Record history non-blocking
+  recordSearchHistory(userId, q, total).catch(() => {});
 
-  res.json({ results, total: results.length, query: q });
+  res.json({
+    query: q,
+    results,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  });
 });
 
-// ─── Autocomplete (Trie-based) ────────────────────────────────────────────────
+// ─── Autocomplete ─────────────────────────────────────────────────────────────
 router.get("/search/autocomplete", requireAuth, async (req, res): Promise<void> => {
-  const q = String(req.query.q ?? "").trim();
-  if (!q || q.length < 2) {
-    res.json([]);
+  const q = sanitizeSearchQuery(String(req.query.q ?? ""));
+  const limitParam = parseInt(String(req.query.limit ?? "8"), 10);
+  const limit = Math.min(20, Math.max(1, isNaN(limitParam) ? 8 : limitParam));
+
+  if (!q || q.length < 1) {
+    res.json({ suggestions: [] });
     return;
   }
 
   const userId = req.user!.userId;
   const trie = await getOrBuildTrie(userId);
-  const suggestions = trie.search(q, 8);
+  const suggestions: SearchSuggestion[] = trie.search(q, limit);
 
-  res.json(suggestions);
+  // If Trie prefix returned fewer than limit, supplement with substring database search
+  if (suggestions.length < limit) {
+    const dbMatches = await db
+      .select({
+        id: problemsTable.id,
+        title: problemsTable.title,
+        platform: problemsTable.platform,
+        difficulty: problemsTable.difficulty,
+        topics: problemsTable.topics,
+      })
+      .from(problemsTable)
+      .where(
+        and(
+          eq(problemsTable.userId, userId),
+          or(
+            ilike(problemsTable.title, `%${q}%`),
+            ilike(problemsTable.platform, `%${q}%`),
+            sql`${problemsTable.topics}::text ilike ${"%" + q + "%"}`,
+          )!,
+        ),
+      )
+      .limit(limit);
+
+    for (const match of dbMatches) {
+      if (!suggestions.some((s) => s.id === match.id)) {
+        suggestions.push(match);
+        if (suggestions.length >= limit) break;
+      }
+    }
+  }
+
+  res.json({ suggestions });
+});
+
+// ─── Record Search History explicitly ─────────────────────────────────────────
+router.post("/search/history", requireAuth, async (req, res): Promise<void> => {
+  const q = sanitizeSearchQuery(String(req.body.query ?? ""));
+  if (!q) {
+    res.status(400).json({ error: "Query is required" });
+    return;
+  }
+
+  const userId = req.user!.userId;
+  const resultCount = typeof req.body.resultCount === "number" ? req.body.resultCount : 0;
+  await recordSearchHistory(userId, q, resultCount);
+
+  res.status(201).json({ message: "Search history recorded" });
 });
 
 // ─── Search History ───────────────────────────────────────────────────────────
@@ -134,15 +257,32 @@ router.get("/search/history", requireAuth, async (req, res): Promise<void> => {
   // Deduplicate by query (keep most recent)
   const seen = new Set<string>();
   const unique = history.filter((h: any) => {
-    if (seen.has(h.query)) return false;
-    seen.add(h.query);
+    const key = h.query.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 
   res.json(unique);
 });
 
-// ─── Clear Search History ─────────────────────────────────────────────────────
+// ─── Delete Individual Search History Item ────────────────────────────────────
+router.delete("/search/history/:id", requireAuth, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid history id" });
+    return;
+  }
+
+  const userId = req.user!.userId;
+  await db
+    .delete(searchHistoryTable)
+    .where(and(eq(searchHistoryTable.id, id), eq(searchHistoryTable.userId, userId)));
+
+  res.json({ message: "History item deleted" });
+});
+
+// ─── Clear All Search History ─────────────────────────────────────────────────
 router.delete("/search/history", requireAuth, async (req, res): Promise<void> => {
   const userId = req.user!.userId;
 

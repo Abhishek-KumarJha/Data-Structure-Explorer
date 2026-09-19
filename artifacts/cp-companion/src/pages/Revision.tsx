@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BrainCircuit, RefreshCw, Zap, ChevronRight, Check, Star, Loader2, AlertCircle } from 'lucide-react';
 import { api, RevisionQueueResponse, RevisionQueueItem } from '../lib/api';
+import { queryKeys } from '../lib/query-keys';
 import Page from '../components/layout/Page';
 
 function Stat({ label, value, sub, icon: Icon, accent = false }: {
@@ -57,7 +58,7 @@ export default function Revision() {
   const [reviewing, setReviewing] = useState<number | null>(null);
 
   const { data, isLoading, isError } = useQuery<RevisionQueueResponse>({
-    queryKey: ['revision-queue'],
+    queryKey: queryKeys.revision.queue(20),
     queryFn: () => api.get<RevisionQueueResponse>('/revision/queue?limit=20'),
     staleTime: 30 * 1000,
   });
@@ -67,8 +68,9 @@ export default function Revision() {
       api.post(`/revision/${problemId}/complete`, { quality }),
     onSuccess: () => {
       setReviewing(null);
-      qc.invalidateQueries({ queryKey: ['revision-queue'] });
-      qc.invalidateQueries({ queryKey: ['revision-stats'] });
+      qc.invalidateQueries({ queryKey: queryKeys.revision.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.analytics.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.problems.all() });
     },
   });
 

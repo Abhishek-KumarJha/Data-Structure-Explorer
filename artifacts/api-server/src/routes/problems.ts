@@ -6,8 +6,12 @@ import {
   solveHistoryTable,
   userStatisticsTable,
   revisionQueueTable,
+  favoritesTable,
+  bookmarksTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth.js";
+import { buildProblemSearchFilters } from "../lib/search-filters.js";
+import { invalidateTrieCache } from "./search.js";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -87,36 +91,19 @@ router.get("/problems", requireAuth, async (req, res): Promise<void> => {
   const userId = req.user!.userId;
   const offset = (page - 1) * limit;
 
-  const filters = [eq(problemsTable.userId, userId)];
+  const filters = buildProblemSearchFilters({
+    userId,
+    search,
+    difficulty,
+    platform,
+    status,
+    favoritesOnly,
+    bookmarksOnly,
+    topic,
+    company,
+  });
 
-  if (search) {
-    filters.push(
-      or(
-        ilike(problemsTable.title, `%${search}%`),
-        ilike(problemsTable.platform, `%${search}%`),
-        sql`${problemsTable.topics}::text ilike ${"%" + search + "%"}`,
-        sql`${problemsTable.companyTags}::text ilike ${"%" + search + "%"}`,
-      )!,
-    );
-  }
-
-  if (difficulty && difficulty !== "All")
-    filters.push(eq(problemsTable.difficulty, difficulty));
-  if (platform) filters.push(ilike(problemsTable.platform, `%${platform}%`));
-  if (status && status !== "All")
-    filters.push(eq(problemsTable.status, status));
-  if (favoritesOnly) filters.push(eq(problemsTable.favorite, true));
-  if (bookmarksOnly) filters.push(eq(problemsTable.bookmark, true));
-  if (topic)
-    filters.push(
-      sql`${problemsTable.topics}::text ilike ${"%" + topic + "%"}`,
-    );
-  if (company)
-    filters.push(
-      sql`${problemsTable.companyTags}::text ilike ${"%" + company + "%"}`,
-    );
-
-  // Dynamic sorting
+  // Dynamic sorting with deterministic secondary order
   const sortCol =
     sortBy === "title"
       ? problemsTable.title
@@ -135,7 +122,7 @@ router.get("/problems", requireAuth, async (req, res): Promise<void> => {
       .select()
       .from(problemsTable)
       .where(and(...filters))
-      .orderBy(orderFn(sortCol))
+      .orderBy(orderFn(sortCol), desc(problemsTable.id))
       .limit(limit)
       .offset(offset),
     db
@@ -164,23 +151,26 @@ router.post("/problems", requireAuth, async (req, res): Promise<void> => {
   const userId = req.user!.userId;
   const today = new Date().toISOString().slice(0, 10);
 
-  const [problem] = await db
-    .insert(problemsTable)
-    .values({
-      userId,
-      ...parsed.data,
-      dateAdded: today,
-      solvedDate: parsed.data.status === "Solved" ? today : null,
-    })
-    .returning();
+  const [problem] = await db.transaction(async (tx: any) => {
+    const [p] = await tx
+      .insert(problemsTable)
+      .values({
+        userId,
+        ...parsed.data,
+        dateAdded: today,
+        solvedDate: parsed.data.status === "Solved" ? today : null,
+      })
+      .returning();
 
-  // If solved, add to solve history and update stats
-  if (problem.status === "Solved") {
-    await _recordSolve(userId, problem.id, problem.difficulty, problem.platform);
-    // Auto-add to revision queue with default SM-2 values
-    await _upsertRevisionQueue(userId, problem.id);
-  }
+    // If solved, add to solve history and update stats atomically
+    if (p.status === "Solved") {
+      await _recordSolveTx(tx, userId, p.id, p.difficulty, p.platform);
+      await _upsertRevisionQueueTx(tx, userId, p.id);
+    }
+    return [p];
+  });
 
+  invalidateTrieCache(userId);
   res.status(201).json(problem);
 });
 
@@ -220,22 +210,64 @@ router.patch("/problems/:id", requireAuth, async (req, res): Promise<void> => {
 
   if (wasUnsolved && isNowSolved) {
     update.solvedDate = new Date().toISOString().slice(0, 10);
-    // increment attempts
     update.attempts = (existing.attempts ?? 0) + 1;
   } else if (parsed.data.status === "Unsolved") {
     update.solvedDate = null;
   }
 
-  const [updated] = await db
-    .update(problemsTable)
-    .set(update)
-    .where(eq(problemsTable.id, id))
-    .returning();
+  const updated = await db.transaction(async (tx: any) => {
+    const [u] = await tx
+      .update(problemsTable)
+      .set(update)
+      .where(and(eq(problemsTable.id, id), eq(problemsTable.userId, userId)))
+      .returning();
 
-  // Track solve history
-  if (wasUnsolved && isNowSolved) {
-    await _recordSolve(userId, id, updated.difficulty, updated.platform);
-    await _upsertRevisionQueue(userId, id);
+    // Reconcile favorites table
+    if (parsed.data.favorite !== undefined) {
+      if (parsed.data.favorite) {
+        await tx
+          .insert(favoritesTable)
+          .values({ userId, problemId: id })
+          .onConflictDoNothing();
+      } else {
+        await tx
+          .delete(favoritesTable)
+          .where(and(eq(favoritesTable.userId, userId), eq(favoritesTable.problemId, id)));
+      }
+    }
+
+    // Reconcile bookmarks table
+    if (parsed.data.bookmark !== undefined) {
+      if (parsed.data.bookmark) {
+        await tx
+          .insert(bookmarksTable)
+          .values({ userId, problemId: id })
+          .onConflictDoNothing();
+      } else {
+        await tx
+          .delete(bookmarksTable)
+          .where(and(eq(bookmarksTable.userId, userId), eq(bookmarksTable.problemId, id)));
+      }
+    }
+
+    if (wasUnsolved && isNowSolved) {
+      await _recordSolveTx(tx, userId, id, u.difficulty, u.platform);
+      await _upsertRevisionQueueTx(tx, userId, id);
+    } else if (existing.status === "Solved" && parsed.data.status === "Unsolved") {
+      await tx
+        .update(userStatisticsTable)
+        .set({
+          totalSolved: sql`GREATEST(0, ${userStatisticsTable.totalSolved} - 1)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(userStatisticsTable.userId, userId));
+    }
+
+    return u;
+  });
+
+  if (parsed.data.title || parsed.data.platform || parsed.data.difficulty) {
+    invalidateTrieCache(userId);
   }
 
   res.json(updated);
@@ -261,6 +293,7 @@ router.delete("/problems/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  invalidateTrieCache(userId);
   res.sendStatus(204);
 });
 
@@ -289,13 +322,14 @@ router.get("/problems/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function _recordSolve(
+async function _recordSolveTx(
+  client: any,
   userId: number,
   problemId: number,
   difficulty: string,
   platform: string,
 ): Promise<void> {
-  await db.insert(solveHistoryTable).values({
+  await client.insert(solveHistoryTable).values({
     userId,
     problemId,
     difficulty,
@@ -304,14 +338,14 @@ async function _recordSolve(
 
   // Update/upsert user statistics with streak calculation
   const today = new Date().toISOString().slice(0, 10);
-  const [stats] = await db
+  const [stats] = await client
     .select()
     .from(userStatisticsTable)
     .where(eq(userStatisticsTable.userId, userId))
     .limit(1);
 
   if (!stats) {
-    await db.insert(userStatisticsTable).values({
+    await client.insert(userStatisticsTable).values({
       userId,
       totalSolved: 1,
       totalAttempted: 1,
@@ -336,7 +370,7 @@ async function _recordSolve(
     newStreak = 1; // streak broken
   }
 
-  await db
+  await client
     .update(userStatisticsTable)
     .set({
       totalSolved: stats.totalSolved + 1,
@@ -349,14 +383,15 @@ async function _recordSolve(
     .where(eq(userStatisticsTable.userId, userId));
 }
 
-async function _upsertRevisionQueue(
+async function _upsertRevisionQueueTx(
+  client: any,
   userId: number,
   problemId: number,
 ): Promise<void> {
   const nextReviewAt = new Date();
   nextReviewAt.setDate(nextReviewAt.getDate() + 1); // review in 1 day
 
-  await db
+  await client
     .insert(revisionQueueTable)
     .values({ userId, problemId, nextReviewAt })
     .onConflictDoNothing(); // don't reset if already in queue

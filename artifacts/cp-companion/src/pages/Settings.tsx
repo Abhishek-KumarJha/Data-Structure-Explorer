@@ -6,6 +6,8 @@ import {
   FileJson, FileSpreadsheet, History
 } from 'lucide-react';
 import { api, ImportExportHistoryItem } from '../lib/api';
+import { API_ROOT } from '../lib/api-config';
+import { queryKeys } from '../lib/query-keys';
 import { useAuth } from '../hooks/use-auth';
 import Page from '../components/layout/Page';
 
@@ -57,7 +59,7 @@ export default function Settings() {
   });
 
   const handleExport = async (format: 'json' | 'csv') => {
-    const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/${format}`;
+    const url = `${API_ROOT}/export/${format}`;
     const token = localStorage.getItem('cp-jwt');
     const res = await fetch(url, { credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {} });
     const blob = await res.blob();
@@ -73,12 +75,16 @@ export default function Settings() {
       const text = await file.text();
       const problems = JSON.parse(text);
       const result = await api.post<{ imported: number; duplicatesSkipped: number }>('/import/json', { problems, mode: 'append' });
-      qc.invalidateQueries({ queryKey: ['problems'] });
+      qc.invalidateQueries({ queryKey: queryKeys.problems.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.analytics.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.revision.all() });
       alert(`Imported ${result.imported} problems. ${result.duplicatesSkipped} duplicates skipped.`);
     } else if (file.name.endsWith('.csv')) {
       const csv = await file.text();
       const result = await api.post<{ imported: number; duplicatesSkipped: number }>('/import/csv', { csv, mode: 'append' });
-      qc.invalidateQueries({ queryKey: ['problems'] });
+      qc.invalidateQueries({ queryKey: queryKeys.problems.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.analytics.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.revision.all() });
       alert(`Imported ${result.imported} problems. ${result.duplicatesSkipped} duplicates skipped.`);
     } else {
       alert('Only .json and .csv files are supported.');

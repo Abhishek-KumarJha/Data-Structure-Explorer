@@ -1,14 +1,15 @@
 import { Link } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip,
   ResponsiveContainer
 } from 'recharts';
 import {
   Check, Target, Heart, Flame, ChevronRight, Sparkles,
-  ExternalLink, AlertCircle
+  ExternalLink, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { api, AnalyticsSummary, Problem } from '../lib/api';
+import { queryKeys } from '../lib/query-keys';
 import { useAuth } from '../hooks/use-auth';
 import Page from '../components/layout/Page';
 
@@ -68,22 +69,23 @@ function ProblemMiniRow({ p }: { p: Problem }) {
 
 export default function Overview() {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const { data: analytics, isLoading: analyticsLoading, isError } = useQuery<AnalyticsSummary>({
-    queryKey: ['analytics-summary'],
+  const { data: analytics, isLoading: analyticsLoading, isError, refetch } = useQuery<AnalyticsSummary>({
+    queryKey: queryKeys.analytics.summary(),
     queryFn: () => api.get<AnalyticsSummary>('/analytics/summary'),
     staleTime: 30 * 1000,
   });
 
   const { data: recentData, isLoading: problemsLoading } = useQuery<{ problems: Problem[] }>({
-    queryKey: ['problems-recent'],
+    queryKey: queryKeys.problems.recent(),
     queryFn: () => api.get<{ problems: Problem[] }>('/problems?limit=5&sortBy=dateAdded&sortOrder=desc'),
     staleTime: 30 * 1000,
   });
 
   const { data: revisionData } = useQuery<{ stats: { dueToday: number } }>({
-    queryKey: ['revision-stats'],
+    queryKey: queryKeys.revision.stats(),
     queryFn: () => api.get<{ queue: []; stats: { dueToday: number; reviewRhythm: number; retention: number } }>('/revision/queue?limit=1'),
     staleTime: 60 * 1000,
   });
@@ -104,8 +106,16 @@ export default function Overview() {
       description="A focused workspace for the problems between you and your next breakthrough."
     >
       {isError && (
-        <div className="mb-5 flex items-center gap-2 rounded-lg border border-[#d68a1b]/30 bg-[#d68a1b]/5 p-3 text-xs text-[#9b5e08]">
-          <AlertCircle size={14} /> Unable to load live data. Please check your connection.
+        <div className="mb-5 flex items-center justify-between gap-2 rounded-lg border border-[#d68a1b]/30 bg-[#d68a1b]/5 p-3 text-xs text-[#9b5e08]">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={14} /> Unable to load live data. Please check your connection.
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1 rounded bg-[#d68a1b]/15 px-2.5 py-1 font-medium hover:bg-[#d68a1b]/25 transition-colors"
+          >
+            <RefreshCw size={12} /> Retry
+          </button>
         </div>
       )}
 

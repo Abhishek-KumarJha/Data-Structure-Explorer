@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db, usersTable, userStatisticsTable } from "@workspace/db";
 import { signToken } from "../lib/jwt.js";
 import { requireAuth } from "../middlewares/auth.js";
@@ -53,13 +53,16 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  const [user] = await db
-    .insert(usersTable)
-    .values({ name, email: email.toLowerCase(), passwordHash })
-    .returning();
+  const [user] = await db.transaction(async (tx: any) => {
+    const [u] = await tx
+      .insert(usersTable)
+      .values({ name, email: email.toLowerCase(), passwordHash })
+      .returning();
 
-  // Initialize statistics row for new user
-  await db.insert(userStatisticsTable).values({ userId: user.id });
+    // Initialize statistics row atomically with new user
+    await tx.insert(userStatisticsTable).values({ userId: u.id });
+    return [u];
+  });
 
   const token = signToken({
     userId: user.id,
@@ -177,7 +180,20 @@ router.put("/auth/profile", requireAuth, async (req, res): Promise<void> => {
 
   const update: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.name) update.name = parsed.data.name;
-  if (parsed.data.email) update.email = parsed.data.email.toLowerCase();
+  if (parsed.data.email) {
+    const newEmail = parsed.data.email.toLowerCase();
+    const [conflict] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.email, newEmail), ne(usersTable.id, req.user!.userId)))
+      .limit(1);
+
+    if (conflict) {
+      res.status(409).json({ error: "Email is already registered by another account" });
+      return;
+    }
+    update.email = newEmail;
+  }
   if (parsed.data.weeklyGoal !== undefined)
     update.weeklyGoal = parsed.data.weeklyGoal;
   if (parsed.data.theme) update.theme = parsed.data.theme;
@@ -199,10 +215,12 @@ router.put("/auth/profile", requireAuth, async (req, res): Promise<void> => {
 
 // ─── Dev Only: Clear All Users ────────────────────────────────────────────────
 // DELETE /api/auth/users/all  — wipes every user row (cascades to all data).
-// Blocked in production. Use this to reset for fresh registration testing.
+// Blocked in production and requires ENABLE_DEV_RESET=true explicitly.
 router.delete("/auth/users/all", async (_req, res): Promise<void> => {
-  if (process.env.NODE_ENV === "production") {
-    res.status(403).json({ error: "Not allowed in production" });
+  if (process.env.NODE_ENV === "production" || process.env.ENABLE_DEV_RESET !== "true") {
+    res.status(403).json({
+      error: "Destructive reset is forbidden in this environment. Set ENABLE_DEV_RESET=true in development to enable.",
+    });
     return;
   }
   await db.delete(usersTable);

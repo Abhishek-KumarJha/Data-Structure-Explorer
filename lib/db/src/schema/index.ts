@@ -71,10 +71,14 @@ export const problemsTable = pgTable(
   },
   (t) => [
     index("problems_user_idx").on(t.userId),
+    index("problems_user_status_idx").on(t.userId, t.status),
+    index("problems_user_difficulty_idx").on(t.userId, t.difficulty),
+    index("problems_user_platform_idx").on(t.userId, t.platform),
+    index("problems_user_favorite_idx").on(t.userId, t.favorite),
+    index("problems_user_bookmark_idx").on(t.userId, t.bookmark),
     index("problems_status_idx").on(t.status),
     index("problems_difficulty_idx").on(t.difficulty),
     index("problems_platform_idx").on(t.platform),
-    index("problems_favorite_idx").on(t.favorite),
   ],
 );
 
@@ -121,6 +125,7 @@ export const revisionQueueTable = pgTable(
   },
   (t) => [
     uniqueIndex("revision_queue_user_problem_idx").on(t.userId, t.problemId),
+    index("revision_queue_user_next_review_idx").on(t.userId, t.nextReviewAt),
     index("revision_queue_next_review_idx").on(t.nextReviewAt),
   ],
 );
@@ -189,6 +194,7 @@ export const solveHistoryTable = pgTable(
   },
   (t) => [
     index("solve_history_user_idx").on(t.userId),
+    index("solve_history_user_solved_at_idx").on(t.userId, t.solvedAt),
     index("solve_history_solved_at_idx").on(t.solvedAt),
   ],
 );
@@ -230,6 +236,7 @@ export const searchHistoryTable = pgTable(
   },
   (t) => [
     index("search_history_user_idx").on(t.userId),
+    index("search_history_user_searched_at_idx").on(t.userId, t.searchedAt),
     index("search_history_searched_at_idx").on(t.searchedAt),
   ],
 );
@@ -362,3 +369,38 @@ export type UserStatistics = typeof userStatisticsTable.$inferSelect;
 export type SearchHistoryEntry = typeof searchHistoryTable.$inferSelect;
 export type ImportExportHistoryEntry =
   typeof importExportHistoryTable.$inferSelect;
+
+// ─── RevisionReviews (Audit & History) ────────────────────────────────────────
+export const revisionReviewsTable = pgTable(
+  "revision_reviews",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    problemId: integer("problem_id")
+      .notNull()
+      .references(() => problemsTable.id, { onDelete: "cascade" }),
+    revisionQueueId: integer("revision_queue_id")
+      .references(() => revisionQueueTable.id, { onDelete: "set null" }),
+    quality: integer("quality").notNull(),
+    previousIntervalDays: integer("previous_interval_days"),
+    newIntervalDays: integer("new_interval_days"),
+    previousEaseFactor: real("previous_ease_factor"),
+    newEaseFactor: real("new_ease_factor"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("revision_reviews_user_idx").on(t.userId),
+    index("revision_reviews_problem_idx").on(t.problemId),
+    index("revision_reviews_reviewed_at_idx").on(t.reviewedAt),
+  ],
+);
+
+export const insertRevisionReviewSchema = createInsertSchema(
+  revisionReviewsTable,
+).omit({ id: true, reviewedAt: true });
+export type InsertRevisionReview = z.infer<typeof insertRevisionReviewSchema>;
+export type RevisionReview = typeof revisionReviewsTable.$inferSelect;

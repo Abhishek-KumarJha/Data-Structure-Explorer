@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { BarChart3, TrendingUp, Target, Layers } from 'lucide-react';
 import { api, AnalyticsSummary, HeatmapData } from '../lib/api';
+import { queryKeys } from '../lib/query-keys';
 import Page from '../components/layout/Page';
 
 const DIFF_COLORS = { Easy: 'hsl(var(--accent))', Medium: '#d68a1b', Hard: 'hsl(var(--destructive))' };
@@ -60,25 +61,25 @@ function CalendarHeatmap({ data }: { data: HeatmapData }) {
 
 export default function Analytics() {
   const { data: summary, isLoading: summaryLoading } = useQuery<AnalyticsSummary>({
-    queryKey: ['analytics-summary'],
+    queryKey: queryKeys.analytics.summary(),
     queryFn: () => api.get<AnalyticsSummary>('/analytics/summary'),
     staleTime: 30 * 1000,
   });
 
   const { data: heatmap } = useQuery<HeatmapData>({
-    queryKey: ['analytics-heatmap'],
+    queryKey: ['analytics', 'heatmap'],
     queryFn: () => api.get<HeatmapData>('/analytics/heatmap'),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: monthly } = useQuery<Array<{ month: string; solved: number }>>({
-    queryKey: ['analytics-monthly'],
+    queryKey: ['analytics', 'monthly'],
     queryFn: () => api.get<Array<{ month: string; solved: number }>>('/analytics/monthly'),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: topicData } = useQuery<Array<{ name: string; total: number; solved: number; successRate: number }>>({
-    queryKey: ['analytics-topics'],
+    queryKey: ['analytics', 'topics'],
     queryFn: () => api.get('/analytics/topics'),
     staleTime: 5 * 60 * 1000,
   });

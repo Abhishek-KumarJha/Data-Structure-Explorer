@@ -64,26 +64,28 @@ router.patch("/settings", requireAuth, async (req, res): Promise<void> => {
 router.post("/settings/reset", requireAuth, async (req, res): Promise<void> => {
   const userId = req.user!.userId;
 
-  // Delete all user data in correct order (respect foreign keys)
-  await db.delete(notesTable).where(eq(notesTable.userId, userId));
-  await db.delete(searchHistoryTable).where(eq(searchHistoryTable.userId, userId));
-  await db.delete(importExportHistoryTable).where(eq(importExportHistoryTable.userId, userId));
-  await db.delete(revisionQueueTable).where(eq(revisionQueueTable.userId, userId));
-  await db.delete(contestsTable).where(eq(contestsTable.userId, userId));
-  await db.delete(solveHistoryTable).where(eq(solveHistoryTable.userId, userId));
-  await db.delete(problemsTable).where(eq(problemsTable.userId, userId));
+  // Delete all user data in atomic transaction (respecting foreign keys)
+  await db.transaction(async (tx: any) => {
+    await tx.delete(notesTable).where(eq(notesTable.userId, userId));
+    await tx.delete(searchHistoryTable).where(eq(searchHistoryTable.userId, userId));
+    await tx.delete(importExportHistoryTable).where(eq(importExportHistoryTable.userId, userId));
+    await tx.delete(revisionQueueTable).where(eq(revisionQueueTable.userId, userId));
+    await tx.delete(contestsTable).where(eq(contestsTable.userId, userId));
+    await tx.delete(solveHistoryTable).where(eq(solveHistoryTable.userId, userId));
+    await tx.delete(problemsTable).where(eq(problemsTable.userId, userId));
 
-  // Reset statistics
-  await db
-    .update(userStatisticsTable)
-    .set({
-      totalSolved: 0,
-      totalAttempted: 0,
-      currentStreak: 0,
-      lastActiveDate: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(userStatisticsTable.userId, userId));
+    // Reset statistics atomically
+    await tx
+      .update(userStatisticsTable)
+      .set({
+        totalSolved: 0,
+        totalAttempted: 0,
+        currentStreak: 0,
+        lastActiveDate: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(userStatisticsTable.userId, userId));
+  });
 
   res.json({ message: "Account data reset successfully" });
 });

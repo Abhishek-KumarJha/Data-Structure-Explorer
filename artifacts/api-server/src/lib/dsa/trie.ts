@@ -8,8 +8,14 @@
 interface TrieNode {
   children: Map<string, TrieNode>;
   isEnd: boolean;
-  word: string; // store the complete word at leaf
-  metadata?: { id: number; platform: string; difficulty: string };
+  word: string; // store the matched token/word at leaf
+  metadata?: {
+    id: number;
+    platform: string;
+    difficulty: string;
+    title?: string;
+    topics?: string[];
+  };
 }
 
 export interface SearchSuggestion {
@@ -17,6 +23,7 @@ export interface SearchSuggestion {
   title: string;
   platform: string;
   difficulty: string;
+  topics?: string[];
 }
 
 export class Trie {
@@ -38,7 +45,13 @@ export class Trie {
    */
   insert(
     word: string,
-    metadata?: { id: number; platform: string; difficulty: string },
+    metadata?: {
+      id: number;
+      platform: string;
+      difficulty: string;
+      title?: string;
+      topics?: string[];
+    },
   ): void {
     let current = this.root;
     const normalized = word.toLowerCase();
@@ -96,12 +109,16 @@ export class Trie {
     if (results.length >= limit) return;
 
     if (node.isEnd && node.metadata) {
-      results.push({
-        id: node.metadata.id,
-        title: node.word,
-        platform: node.metadata.platform,
-        difficulty: node.metadata.difficulty,
-      });
+      const alreadyPresent = results.some((r) => r.id === node.metadata!.id);
+      if (!alreadyPresent) {
+        results.push({
+          id: node.metadata.id,
+          title: node.metadata.title ?? node.word,
+          platform: node.metadata.platform,
+          difficulty: node.metadata.difficulty,
+          topics: node.metadata.topics,
+        });
+      }
     }
 
     for (const child of node.children.values()) {

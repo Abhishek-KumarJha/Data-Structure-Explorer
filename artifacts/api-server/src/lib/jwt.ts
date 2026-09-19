@@ -1,5 +1,11 @@
 import jwt from "jsonwebtoken";
 
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0)) {
+  throw new Error("CRITICAL CONFIGURATION ERROR: JWT_SECRET environment variable is mandatory in production.");
+}
+
 const JWT_SECRET = process.env.JWT_SECRET ?? "cp-companion-dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "7d";
 

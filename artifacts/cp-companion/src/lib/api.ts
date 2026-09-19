@@ -1,27 +1,12 @@
-import { getStoredToken } from "../hooks/use-auth";
+import { getStoredToken, setStoredToken } from "../hooks/use-auth";
+import { API_ROOT } from "./api-config";
 
-function normalizeApiUrl(raw: string): string {
-  if (!raw) return "";
-  if (raw.startsWith("http://") || raw.startsWith("https://"))
-    return raw.replace(/\/$/, "");
-  return `https://${raw.replace(/\/$/, "")}`;
-}
-const BASE = normalizeApiUrl(import.meta.env.VITE_API_URL ?? "");
-
-function resolveApiRoot(): string {
-  if (BASE) return `${BASE}/api`;
-  if (import.meta.env.PROD) {
-    throw Object.assign(
-      new Error(
-        "API is not configured. Set VITE_API_URL to your backend URL and redeploy.",
-      ),
-      { status: 500 },
-    );
-  }
-  return "/api";
-}
-
-export type ApiError = { message: string; status: number };
+export type ApiError = {
+  message: string;
+  status: number;
+  code?: string;
+  fields?: Record<string, unknown>;
+};
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
@@ -33,29 +18,47 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(`${resolveApiRoot()}${path}`, {
+    res = await fetch(`${API_ROOT}${path}`, {
       ...options,
       credentials: "include",
       headers,
     });
   } catch {
     throw Object.assign(
-      new Error("Cannot reach the server. Please try again."),
+      new Error("Cannot reach the server. Please check your connection and try again."),
       { status: 0 },
     );
   }
 
+  if (res.status === 401) {
+    setStoredToken(null);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
+  }
+
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
+    let code: string | undefined;
+    let fields: Record<string, unknown> | undefined;
     try {
       const text = await res.text();
       if (text) {
         const err = JSON.parse(text);
-        message = err.error ?? err.message ?? message;
+        if (typeof err.error === "object" && err.error !== null) {
+          message = err.error.message ?? message;
+          code = err.error.code;
+          fields = err.error.fields;
+        } else {
+          message = err.error ?? err.message ?? message;
+          code = err.code;
+        }
       }
     } catch {}
-    const error = new Error(message) as Error & { status: number };
+    const error = new Error(message) as Error & ApiError;
     error.status = res.status;
+    error.code = code;
+    error.fields = fields;
     throw error;
   }
 
@@ -75,23 +78,35 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // ─── Typed API helpers ────────────────────────────────────────────────────────
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, options?: RequestInit) =>
+    request<T>(path, { method: "GET", ...options }),
+  post: <T>(path: string, body?: unknown, options?: RequestInit) =>
     request<T>(path, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
+      ...options,
     }),
-  put: <T>(path: string, body?: unknown) =>
+  put: <T>(path: string, body?: unknown, options?: RequestInit) =>
     request<T>(path, {
       method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
+      ...options,
     }),
-  patch: <T>(path: string, body?: unknown) =>
+  patch: <T>(path: string, body?: unknown, options?: RequestInit) =>
     request<T>(path, {
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
+      ...options,
     }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  delete: <T>(path: string, options?: RequestInit) =>
+    request<T>(path, { method: "DELETE", ...options }),
+  deleteSearchHistoryItem: (id: number) =>
+    request<{ message: string }>(`/search/history/${id}`, { method: "DELETE" }),
+  recordSearchHistory: (query: string, resultCount?: number) =>
+    request<{ message: string }>("/search/history", {
+      method: "POST",
+      body: JSON.stringify({ query, resultCount }),
+    }),
 };
 
 // ─── Problem types ────────────────────────────────────────────────────────────
@@ -189,6 +204,18 @@ export interface SearchResult {
   results: Problem[];
   total: number;
   query: string;
+}
+
+export interface AutocompleteSuggestion {
+  id: number;
+  title: string;
+  platform: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  topics?: string[];
+}
+
+export interface AutocompleteResponse {
+  suggestions: AutocompleteSuggestion[];
 }
 
 export interface SearchHistoryItem {

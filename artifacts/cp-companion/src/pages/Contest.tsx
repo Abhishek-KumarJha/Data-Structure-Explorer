@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Command, ChevronRight, Check, Trophy, Clock, Loader2, Plus, Shuffle, History, X, AlertCircle } from 'lucide-react';
 import { api, Contest as ContestType, ContestProblem } from '../lib/api';
+import { queryKeys } from '../lib/query-keys';
 import Page from '../components/layout/Page';
 
 function DifficultyBadge({ value }: { value: string }) {
@@ -44,7 +45,7 @@ function ContestView({ contest, onComplete }: { contest: ContestType; onComplete
   const qc = useQueryClient();
 
   const { data: liveContest } = useQuery<ContestType>({
-    queryKey: ['contest', contest.id],
+    queryKey: queryKeys.contests.detail(contest.id),
     queryFn: () => api.get<ContestType>(`/contests/${contest.id}`),
     refetchInterval: 10000, // poll every 10s
   });
@@ -57,12 +58,16 @@ function ContestView({ contest, onComplete }: { contest: ContestType; onComplete
   const submitMutation = useMutation({
     mutationFn: ({ problemId }: { problemId: number }) =>
       api.post(`/contests/${contest.id}/problems/${problemId}/submit`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['contest', contest.id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.contests.all() }),
   });
 
   const completeMutation = useMutation({
     mutationFn: () => api.patch(`/contests/${contest.id}/complete`, {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contests'] }); onComplete(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.contests.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.analytics.all() });
+      onComplete();
+    },
   });
 
   return (
@@ -162,14 +167,21 @@ export default function Contest() {
     difficulty: 'Mixed' as 'Easy' | 'Medium' | 'Hard' | 'Mixed',
   });
 
+  // Query server for ongoing active contest (resumes on browser refresh)
+  const { data: serverActive } = useQuery<{ active: ContestType | null }>({
+    queryKey: queryKeys.contests.active(),
+    queryFn: () => api.get<{ active: ContestType | null }>('/contests/active'),
+    staleTime: 5000,
+  });
+
   const { data: historyContests } = useQuery<ContestType[]>({
-    queryKey: ['contests'],
+    queryKey: queryKeys.contests.list(),
     queryFn: () => api.get<ContestType[]>('/contests'),
     enabled: showHistory,
   });
 
   const { data: historyStats } = useQuery({
-    queryKey: ['contest-stats'],
+    queryKey: queryKeys.contests.stats(),
     queryFn: () => api.get<{ totalContests: number; completed: number; avgScore: number; bestScore: number }>('/contests/history/stats'),
   });
 
@@ -178,14 +190,22 @@ export default function Contest() {
     onSuccess: (contest) => {
       setActiveContest(contest);
       setShowCreate(false);
-      qc.invalidateQueries({ queryKey: ['contests'] });
+      qc.invalidateQueries({ queryKey: queryKeys.contests.all() });
     },
   });
 
-  if (activeContest && activeContest.status === 'active') {
+  const currentContest = activeContest ?? serverActive?.active ?? null;
+
+  if (currentContest && currentContest.status === 'active') {
     return (
       <Page eyebrow="Virtual contest" title="Make it count.">
-        <ContestView contest={activeContest} onComplete={() => setActiveContest(null)} />
+        <ContestView
+          contest={currentContest}
+          onComplete={() => {
+            setActiveContest(null);
+            qc.invalidateQueries({ queryKey: queryKeys.contests.all() });
+          }}
+        />
       </Page>
     );
   }

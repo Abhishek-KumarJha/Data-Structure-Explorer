@@ -7,6 +7,7 @@ import {
   Tag, Loader2, StickyNote,
 } from 'lucide-react';
 import { api, Problem, ProblemsResponse } from '../lib/api';
+import { queryKeys } from '../lib/query-keys';
 import { useDebounce } from '../hooks/use-debounce';
 import Page from '../components/layout/Page';
 
@@ -39,12 +40,23 @@ function DifficultyBadge({ value }: { value: string }) {
   );
 }
 
-function Empty({ title, text, icon: Icon = Database }: { title: string; text: string; icon?: React.ElementType }) {
+function Empty({
+  title,
+  text,
+  icon: Icon = Database,
+  action,
+}: {
+  title: string;
+  text: string;
+  icon?: React.ElementType;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
       <div className="mb-4 rounded-xl bg-muted p-3 text-muted-foreground"><Icon size={22} /></div>
       <h3 className="font-semibold">{title}</h3>
       <p className="mt-1 max-w-xs text-sm text-muted-foreground">{text}</p>
+      {action}
     </div>
   );
 }
@@ -122,12 +134,22 @@ function ProblemRow({ p, onToggleFav, onToggleBookmark, onEdit, onDelete, onSolv
 }
 
 export default function Problems() {
-  const [, rawLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const qc = useQueryClient();
 
-  // Filters
-  const urlParams = new URLSearchParams(window.location.search);
-  const [search, setSearch] = useState(urlParams.get('search') ?? '');
+  // Extract query from Wouter location or window.location reactively
+  const urlSearchQuery = useMemo(() => {
+    const queryIdx = location.indexOf('?');
+    if (queryIdx !== -1) {
+      return new URLSearchParams(location.slice(queryIdx)).get('search') ?? '';
+    }
+    if (typeof window !== 'undefined' && window.location.search) {
+      return new URLSearchParams(window.location.search).get('search') ?? '';
+    }
+    return '';
+  }, [location]);
+
+  const [search, setSearch] = useState(urlSearchQuery);
   const [difficulty, setDifficulty] = useState('All');
   const [status, setStatus] = useState('All');
   const [favorites, setFavorites] = useState(false);
@@ -143,7 +165,32 @@ export default function Problems() {
   const [noteFor, setNoteFor] = useState<Problem | null>(null);
   const [noteContent, setNoteContent] = useState('');
 
-  const debouncedSearch = useDebounce(search, 350);
+  const debouncedSearch = useDebounce(search, 300);
+
+  // Keep input synchronized when the URL changes (e.g. SearchModal navigation, browser back/forward)
+  useEffect(() => {
+    setSearch(urlSearchQuery);
+  }, [urlSearchQuery]);
+
+  // Sync debounced search to URL without creating update loops
+  useEffect(() => {
+    const queryIdx = location.indexOf('?');
+    const currentParams = new URLSearchParams(queryIdx !== -1 ? location.slice(queryIdx) : '');
+    const currentUrlSearch = currentParams.get('search') ?? '';
+
+    if (debouncedSearch.trim() !== currentUrlSearch) {
+      if (debouncedSearch.trim()) {
+        currentParams.set('search', debouncedSearch.trim());
+      } else {
+        currentParams.delete('search');
+      }
+      const newQuery = currentParams.toString();
+      const newPath = newQuery ? `/problems?${newQuery}` : '/problems';
+      if (location !== newPath) {
+        setLocation(newPath, { replace: true });
+      }
+    }
+  }, [debouncedSearch, location, setLocation]);
 
   // Reset page on filter change
   useEffect(() => { setPage(1); }, [debouncedSearch, difficulty, status, favorites, bookmarksOnly]);
@@ -159,16 +206,16 @@ export default function Problems() {
   });
 
   const { data, isLoading, isError } = useQuery<ProblemsResponse>({
-    queryKey: ['problems', params.toString()],
+    queryKey: queryKeys.problems.list(params.toString()),
     queryFn: () => api.get<ProblemsResponse>(`/problems?${params}`),
     staleTime: 10 * 1000,
     placeholderData: (prev) => prev,
   });
 
   const invalidate = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ['problems'] });
-    qc.invalidateQueries({ queryKey: ['analytics-summary'] });
-    qc.invalidateQueries({ queryKey: ['problems-all-for-trie'] });
+    qc.invalidateQueries({ queryKey: queryKeys.problems.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.analytics.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.revision.all() });
   }, [qc]);
 
   const createMutation = useMutation({
@@ -252,8 +299,18 @@ export default function Problems() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search title, topic, company, or platform..."
-            className="h-10 w-full rounded-lg bg-muted/50 pl-10 pr-3 text-sm outline-none ring-accent focus:ring-2"
+            className="h-10 w-full rounded-lg bg-muted/50 pl-10 pr-9 text-sm outline-none ring-accent focus:ring-2"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search input"
+            >
+              <X size={15} />
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}
@@ -275,6 +332,40 @@ export default function Problems() {
         </div>
       </div>
 
+      {/* Active search filter chip */}
+      {debouncedSearch && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Active search:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+            <Search size={12} />
+            "{debouncedSearch}"
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Clear search filter"
+              className="ml-1 rounded-full p-0.5 hover:bg-accent/20"
+            >
+              <X size={12} />
+            </button>
+          </span>
+          {(difficulty !== 'All' || status !== 'All' || favorites || bookmarksOnly) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setDifficulty('All');
+                setStatus('All');
+                setFavorites(false);
+                setBookmarksOnly(false);
+              }}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline decoration-dotted"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Count + solved */}
       <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
         <span>{data?.total ?? 0} problems{debouncedSearch ? ` matching "${debouncedSearch}"` : ''}</span>
@@ -284,7 +375,7 @@ export default function Problems() {
       {/* Problem list */}
       {isLoading ? (
         <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-muted" />)}
+          {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-muted" />)}
         </div>
       ) : problems.length ? (
         <div>
@@ -302,7 +393,32 @@ export default function Problems() {
           ))}
         </div>
       ) : (
-        <Empty title="No problems found" text="Try a different filter or add a problem to your library." icon={Search} />
+        <Empty
+          title="No problems found"
+          text={
+            debouncedSearch || difficulty !== 'All' || status !== 'All' || favorites || bookmarksOnly
+              ? "No problems match your current search or filter criteria."
+              : "Your library is empty. Add your first problem to start practicing!"
+          }
+          icon={Search}
+          action={
+            debouncedSearch || difficulty !== 'All' || status !== 'All' || favorites || bookmarksOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setDifficulty('All');
+                  setStatus('All');
+                  setFavorites(false);
+                  setBookmarksOnly(false);
+                }}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-accent hover:text-accent shadow-sm"
+              >
+                <X size={14} /> Reset all filters
+              </button>
+            ) : undefined
+          }
+        />
       )}
 
       {/* Pagination */}

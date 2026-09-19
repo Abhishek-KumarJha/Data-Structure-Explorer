@@ -6,6 +6,7 @@ import {
   revisionQueueTable,
   userStatisticsTable,
   solveHistoryTable,
+  revisionReviewsTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth.js";
 import { MinHeap } from "../lib/dsa/priority-queue.js";
@@ -160,26 +161,42 @@ router.post(
       quality,
     );
 
-    const [updated] = await db
-      .update(revisionQueueTable)
-      .set({
-        easeFactor: result.easeFactor,
-        interval: result.interval,
-        repetitions: result.repetitions,
-        nextReviewAt: result.nextReviewAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(revisionQueueTable.id, entry.id))
-      .returning();
+    const updated = await db.transaction(async (tx: any) => {
+      const [u] = await tx
+        .update(revisionQueueTable)
+        .set({
+          easeFactor: result.easeFactor,
+          interval: result.interval,
+          repetitions: result.repetitions,
+          nextReviewAt: result.nextReviewAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(revisionQueueTable.id, entry.id))
+        .returning();
 
-    // Update last revised timestamp on problem
-    await db
-      .update(problemsTable)
-      .set({
-        lastRevisedAt: new Date(),
-        revisionCount: sql`${problemsTable.revisionCount} + 1`,
-      })
-      .where(eq(problemsTable.id, problemId));
+      // Update last revised timestamp on problem with ownership verification
+      await tx
+        .update(problemsTable)
+        .set({
+          lastRevisedAt: new Date(),
+          revisionCount: sql`${problemsTable.revisionCount} + 1`,
+        })
+        .where(and(eq(problemsTable.id, problemId), eq(problemsTable.userId, userId)));
+
+      // Audit review entry into revisionReviewsTable
+      await tx.insert(revisionReviewsTable).values({
+        userId,
+        problemId,
+        revisionQueueId: entry.id,
+        quality,
+        previousIntervalDays: entry.interval,
+        newIntervalDays: result.interval,
+        previousEaseFactor: entry.easeFactor,
+        newEaseFactor: result.easeFactor,
+      });
+
+      return u;
+    });
 
     res.json({
       ...updated,
